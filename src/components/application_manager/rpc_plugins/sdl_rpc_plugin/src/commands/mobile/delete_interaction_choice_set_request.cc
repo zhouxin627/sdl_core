@@ -31,6 +31,8 @@
  POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <algorithm>
+
 #include "sdl_rpc_plugin/commands/mobile/delete_interaction_choice_set_request.h"
 
 #include "application_manager/application_impl.h"
@@ -53,9 +55,14 @@ DeleteInteractionChoiceSetRequest::DeleteInteractionChoiceSetRequest(
                          application_manager,
                          rpc_service,
                          hmi_capabilities,
-                         policy_handler) {}
+                         policy_handler)
+    , response_result_code_(
+          hmi_apis::Common_Result::eType::UNSUPPORTED_RESOURCE)
+    , response_result_(false) {}
 
-DeleteInteractionChoiceSetRequest::~DeleteInteractionChoiceSetRequest() {}
+DeleteInteractionChoiceSetRequest::~DeleteInteractionChoiceSetRequest() {
+  unsubscribe_from_all_events();
+}
 
 void DeleteInteractionChoiceSetRequest::Run() {
   LOG4CXX_AUTO_TRACE(logger_);
@@ -87,23 +94,60 @@ void DeleteInteractionChoiceSetRequest::Run() {
     return;
   }
   SendVrDeleteCommand(app);
-
-  smart_objects::SmartObject msg_params =
-      smart_objects::SmartObject(smart_objects::SmartType_Map);
-
-  msg_params[strings::interaction_choice_set_id] = choice_set_id;
-  msg_params[strings::app_id] = app->app_id();
-
-  app->RemoveChoiceSet(choice_set_id);
-
-  // Checking of HMI responses will be implemented with APPLINK-14600
-  const bool result = true;
-  SendResponse(result, mobile_apis::Result::SUCCESS);
 }
 
 bool DeleteInteractionChoiceSetRequest::Init() {
   hash_update_mode_ = HashUpdateMode::kDoHashUpdate;
   return true;
+}
+
+void DeleteInteractionChoiceSetRequest::on_event(
+    const event_engine::Event& event) {
+  using namespace helpers;
+  LOG4CXX_AUTO_TRACE(logger_);
+
+  const smart_objects::SmartObject& message = event.smart_object();
+  response_result_code_ = static_cast<hmi_apis::Common_Result::eType>(
+      message[strings::params][hmi_response::code].asInt());
+  const std::uint32_t correlation_id = static_cast<uint32_t>(
+      message[strings::params][strings::correlation_id].asUInt());
+
+  auto found_request =
+      std::find(sent_requests_.begin(), sent_requests_.end(), correlation_id);
+  if (found_request == sent_requests_.end()) {
+    LOG4CXX_DEBUG(logger_,
+                  "Request with " << *found_request
+                                  << " correlation_id didn't find.");
+    return;
+  }
+  sent_requests_.erase(found_request);
+
+  if (sent_requests_.empty()) {
+    const mobile_apis::Result::eType result_code =
+        MessageHelper::HMIToMobileResult(response_result_code_);
+    response_result_ =
+        helpers::Compare<mobile_apis::Result::eType, helpers::EQ, helpers::ONE>(
+            result_code,
+            mobile_apis::Result::SUCCESS,
+            mobile_apis::Result::WARNINGS);
+    SendResponse(response_result_, result_code);
+    LOG4CXX_DEBUG(
+        logger_,
+        "Response sent. Sussess: " << (response_result_ ? "true" : "false")
+                                   << ",error_code: " << result_code);
+  }
+}
+
+void DeleteInteractionChoiceSetRequest::onTimeOut() {
+  LOG4CXX_AUTO_TRACE(logger_);
+
+  {
+    sync_primitives::AutoLock auto_lock(requests_lock_);
+    unsubscribe_from_all_events();
+    sent_requests_.clear();
+    response_result_ = false;
+  }
+  SendResponse(response_result_, mobile_apis::Result::GENERIC_ERROR);
 }
 
 bool DeleteInteractionChoiceSetRequest::ChoiceSetInUse(
@@ -159,7 +203,9 @@ void DeleteInteractionChoiceSetRequest::SendVrDeleteCommand(
   choice_set = &((*choice_set)[strings::choice_set]);
   for (uint32_t i = 0; i < (*choice_set).length(); ++i) {
     msg_params[strings::cmd_id] = (*choice_set)[i][strings::choice_id];
-    SendHMIRequest(hmi_apis::FunctionID::VR_DeleteCommand, &msg_params);
+    const std::uint32_t sent_request = SendHMIRequest(
+        hmi_apis::FunctionID::VR_DeleteCommand, &msg_params, true);
+    sent_requests_.insert(sent_request);
   }
 }
 
