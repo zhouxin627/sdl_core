@@ -117,7 +117,7 @@ void DeleteInteractionChoiceSetRequest::on_event(
   if (found_request == sent_requests_.end()) {
     LOG4CXX_DEBUG(logger_,
                   "Request with " << *found_request
-                                  << " correlation_id didn't find.");
+                                  << " correlation_id is not found.");
     return;
   }
   sent_requests_.erase(found_request);
@@ -130,6 +130,14 @@ void DeleteInteractionChoiceSetRequest::on_event(
             result_code,
             mobile_apis::Result::SUCCESS,
             mobile_apis::Result::WARNINGS);
+    if (response_result_) {
+      ApplicationSharedPtr app =
+          application_manager_.application(connection_key());
+      const uint32_t choice_set_id =
+          (*message_)[strings::msg_params][strings::interaction_choice_set_id]
+              .asUInt();
+      app->RemoveChoiceSet(choice_set_id);
+    }
     SendResponse(response_result_, result_code);
     LOG4CXX_DEBUG(
         logger_,
