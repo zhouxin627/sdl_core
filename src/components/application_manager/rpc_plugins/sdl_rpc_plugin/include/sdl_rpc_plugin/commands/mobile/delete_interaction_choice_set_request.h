@@ -35,7 +35,7 @@
 #define SRC_COMPONENTS_APPLICATION_MANAGER_RPC_PLUGINS_SDL_RPC_PLUGIN_INCLUDE_SDL_RPC_PLUGIN_COMMANDS_MOBILE_DELETE_INTERACTION_CHOICE_SET_REQUEST_H_
 
 #include <set>
-#include <stdint.h>
+#include <cstdint>
 
 #include "application_manager/commands/command_request_impl.h"
 #include "application_manager/application.h"
@@ -46,7 +46,7 @@ namespace app_mngr = application_manager;
 
 namespace commands {
 
-using SentRequestsSet = std::set<std::uint32_t>;
+typedef std::set<std::uint32_t> SentRequestsSet;
 
 /**
  * @brief DeleteInteractionChoiceSetRequest command class
@@ -104,6 +104,8 @@ class DeleteInteractionChoiceSetRequest
   bool ChoiceSetInUse(app_mngr::ApplicationConstSharedPtr app);
 
   void SendVrDeleteCommand(app_mngr::ApplicationSharedPtr app);
+
+  void SendDeleteInteractionChoiceSetResponse();
 
   /**
    * @brief Final result_code for sending to Mobile.
