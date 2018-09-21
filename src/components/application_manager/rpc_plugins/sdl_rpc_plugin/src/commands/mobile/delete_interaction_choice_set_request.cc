@@ -31,8 +31,6 @@
  POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <algorithm>
-
 #include "sdl_rpc_plugin/commands/mobile/delete_interaction_choice_set_request.h"
 
 #include "application_manager/application_impl.h"
@@ -112,9 +110,8 @@ void DeleteInteractionChoiceSetRequest::on_event(
       const std::uint32_t correlation_id = static_cast<uint32_t>(
           message[strings::params][strings::correlation_id].asUInt());
 
-      auto found_request = std::find(
-          sent_requests_.begin(), sent_requests_.end(), correlation_id);
-      if (found_request == sent_requests_.end()) {
+      auto found_request = sent_requests_.find(correlation_id);
+      if (sent_requests_.end() == found_request) {
         LOG4CXX_WARN(logger_,
                      "Request with " << *found_request
                                      << " correlation_id is not found.");
@@ -220,10 +217,10 @@ void DeleteInteractionChoiceSetRequest::
     app->RemoveChoiceSet(choice_set_id);
   }
 
-  LOG4CXX_DEBUG(
-      logger_,
-      "Response sent. Sussess: " << (response_result_ ? "true" : "false")
-                                 << ",error_code: " << result_code);
+  LOG4CXX_DEBUG(logger_,
+                "Response sent. Result code: " << result_code
+                                               << " sussess: " << std::boolalpha
+                                               << result_code);
   SendResponse(response_result_, result_code);
 }
 

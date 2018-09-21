@@ -46,7 +46,7 @@ namespace app_mngr = application_manager;
 
 namespace commands {
 
-typedef std::set<std::uint32_t> SentRequestsSet;
+typedef std::set<uint32_t> SentRequestsSet;
 
 /**
  * @brief DeleteInteractionChoiceSetRequest command class
