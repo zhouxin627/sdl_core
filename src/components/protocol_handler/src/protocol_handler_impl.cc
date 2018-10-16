@@ -52,13 +52,6 @@ namespace protocol_handler {
 
 CREATE_LOGGERPTR_GLOBAL(logger_, "ProtocolHandler")
 
-/**
- * Function return packet data as std::string.
- * If packet data is not printable return error message
- */
-std::string ConvertPacketDataToString(const uint8_t* data,
-                                      const size_t data_size);
-
 const size_t kStackSize = 65536;
 
 utils::SemanticVersion defaultProtocolVersion(5, 1, 0);

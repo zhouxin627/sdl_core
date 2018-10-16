@@ -36,6 +36,7 @@
 #include "protocol/bson_object_keys.h"
 #include "protocol/common.h"
 #include "protocol_handler/control_message_matcher.h"
+#include "protocol_handler/mock_telemetry_observer.h"
 #include "protocol_handler/mock_protocol_handler.h"
 #include "protocol_handler/mock_protocol_observer.h"
 #include "protocol_handler/mock_protocol_handler_settings.h"
@@ -137,6 +138,8 @@ using ::testing::_;
 using ::testing::Invoke;
 using ::testing::SetArgReferee;
 using ::testing::SetArgPointee;
+using ::testing::SaveArgPointee;
+using ::testing::ElementsAreArray;
 
 typedef std::vector<uint8_t> UCharDataVector;
 
@@ -146,6 +149,10 @@ ACTION_P4(InvokeMemberFuncWithArg2, ptr, memberFunc, a, b) {
 }
 
 namespace {
+const bool kFinalMessage = true;
+const uint8_t* const null_data_ = NULL;
+const uint32_t kInvalidSessionId = 0u;
+const uint32_t kValidSessionId = 1u;
 const uint32_t kAsyncExpectationsTimeout = 10000u;
 const uint32_t kMicrosecondsInMillisecond = 1000u;
 const uint32_t kAddSessionWaitTimeMs = 100u;
@@ -356,6 +363,60 @@ class ProtocolHandlerImplTest : public ::testing::Test {
                   data);
   }
 
+  void OnTMMessageSend() {
+    ProtocolFramePtr protocol_packet =
+        std::make_shared<ProtocolPacket>(connection_id,
+                                         PROTOCOL_VERSION_3,
+                                         PROTECTION_OFF,
+                                         FRAME_TYPE_SINGLE,
+                                         kRpc,
+                                         FRAME_DATA_SINGLE,
+                                         session_id,
+                                         0u,
+                                         message_id,
+                                         null_data_);
+
+    RawMessagePtr message = protocol_packet->serializePacket();
+    EXPECT_CALL(session_observer_mock,
+                PairFromKey(message->connection_key(), _, _))
+        .WillOnce(DoAll(SetArgPointee<1>(connection_id),
+                        SetArgPointee<2>(session_id)));
+
+    const bool final_message = true;
+    protocol_handler::impl::RawFordMessageToMobile raw_message_to_mobile(
+        protocol_packet, final_message);
+    protocol_handler::impl::ToMobileQueue::Handler*
+        raw_message_to_mobile_handler = protocol_handler_impl.get();
+    raw_message_to_mobile_handler->Handle(raw_message_to_mobile);
+
+    MockProtocolObserver mock_protocol_observer;
+    protocol_handler_impl->AddProtocolObserver(&mock_protocol_observer);
+    EXPECT_CALL(mock_protocol_observer, OnMobileMessageSent(_));
+
+    EXPECT_CALL(session_observer_mock, ProtocolVersionUsed(_, _, _))
+        .WillOnce(Return(false));
+
+    tm_listener->OnTMMessageSend(message);
+  }
+
+  ProtocolFramePtr CreateFramePtrWithData(const uint8_t data_value,
+                                          const uint8_t frame_type) {
+    const uint8_t data_size = 1u;
+    ProtocolFramePtr frame_ptr =
+        std::make_shared<ProtocolPacket>(connection_id,
+                                         PROTOCOL_VERSION_3,
+                                         PROTECTION_OFF,
+                                         frame_type,
+                                         kAudio,
+                                         FRAME_DATA_END_SERVICE_ACK,
+                                         session_id,
+                                         data_size,
+                                         message_id,
+                                         &data_value);
+
+    return frame_ptr;
+  }
+
   void VerifySecondaryTransportParamsInStartSessionAck(
       bool config_multiple_transports_enabled,
       const std::vector<std::string>& config_secondary_transports_for_usb,
@@ -386,6 +447,10 @@ class ProtocolHandlerImplTest : public ::testing::Test {
       transport_manager_mock;
   testing::StrictMock<protocol_handler_test::MockSessionObserver>
       session_observer_mock;
+  testing::StrictMock<protocol_handler_test::MockProtocolObserver>
+      protocol_observer_mock;
+  testing::StrictMock<protocol_handler_test::MockPHTelemetryObserver>
+      telemetry_observer_mock;
 #ifdef ENABLE_SECURITY
   testing::NiceMock<security_manager_test::MockSecurityManager>
       security_manager_mock;
@@ -830,8 +895,6 @@ TEST_F(ProtocolHandlerImplTest,
   bson_object_deinitialize(&bson_params2);
 }
 
-// TODO(EZamakhov): add test for get_hash_id/set_hash_id from
-// protocol_handler_impl.cc
 /*
  * ProtocolHandler shall send NAck on session_observer rejection
  */
@@ -1658,7 +1721,7 @@ void ProtocolHandlerImplTest::VerifySecondaryTransportParamsInStartSessionAck(
                                              session_id,
                                              input_protocol_version,
                                              hash_id,
-                                             protocol_handler::SERVICE_TYPE_RPC,
+                                             kRpc,
                                              false /* protection */,
                                              full_version);
 
@@ -2126,7 +2189,7 @@ TEST_F(ProtocolHandlerImplTest,
                                              session_id,
                                              input_protocol_version,
                                              hash_id,
-                                             protocol_handler::SERVICE_TYPE_RPC,
+                                             kRpc,
                                              false /* protection */,
                                              full_version);
 
@@ -2300,7 +2363,7 @@ TEST_F(ProtocolHandlerImplTest,
                                              session_id,
                                              input_protocol_version,
                                              hash_id,
-                                             protocol_handler::SERVICE_TYPE_RPC,
+                                             kRpc,
                                              false /* protection */,
                                              full_version);
 
@@ -2421,7 +2484,7 @@ TEST_F(ProtocolHandlerImplTest,
                                              session_id,
                                              input_protocol_version,
                                              hash_id,
-                                             protocol_handler::SERVICE_TYPE_RPC,
+                                             kRpc,
                                              false /* protection */,
                                              full_version);
 
@@ -2644,7 +2707,7 @@ TEST_F(ProtocolHandlerImplTest, RegisterSecondaryTransport_FAILURE) {
   EXPECT_TRUE(waiter.WaitFor(times, kAsyncExpectationsTimeout));
 }
 
-TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification) {
+TEST_F(ProtocolHandlerImplTest, FloodVerification) {
   const size_t period_msec = 10000;
   const size_t max_messages = 1000;
   InitProtocolHandlerImpl(period_msec, max_messages);
@@ -2659,6 +2722,11 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification) {
   EXPECT_CALL(session_observer_mock, OnApplicationFloodCallBack(connection_key))
       .WillOnce(NotifyTestAsyncWaiter(waiter));
   times++;
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
 
   ON_CALL(protocol_handler_settings_mock, message_frequency_time())
       .WillByDefault(Return(period_msec));
@@ -2681,7 +2749,7 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification) {
   EXPECT_TRUE(waiter->WaitFor(times, period_msec));
 }
 
-TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification_ThresholdValue) {
+TEST_F(ProtocolHandlerImplTest, FloodVerification_ThresholdValue) {
   const size_t period_msec = 10000;
   const size_t max_messages = 1000;
   InitProtocolHandlerImpl(period_msec, max_messages);
@@ -2701,6 +2769,11 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification_ThresholdValue) {
   EXPECT_CALL(session_observer_mock, OnApplicationFloodCallBack(connection_key))
       .Times(0);
 
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
+
   for (size_t i = 0; i < max_messages - 1; ++i) {
     SendTMMessage(connection_id,
                   PROTOCOL_VERSION_3,
@@ -2717,7 +2790,7 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification_ThresholdValue) {
   EXPECT_TRUE(waiter->WaitFor(times, period_msec));
 }
 
-TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification_VideoFrameSkip) {
+TEST_F(ProtocolHandlerImplTest, FloodVerification_VideoFrameSkip) {
   const size_t period_msec = 10000;
   const size_t max_messages = 1000;
   InitProtocolHandlerImpl(period_msec, max_messages);
@@ -2727,6 +2800,11 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification_VideoFrameSkip) {
   uint32_t times = 0;
 
   AddSession(waiter, times);
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
 
   // Expect NO flood notification to CH on video data streaming
   for (size_t i = 0; i < max_messages + 1; ++i) {
@@ -2745,7 +2823,7 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification_VideoFrameSkip) {
   EXPECT_TRUE(waiter->WaitFor(times, period_msec));
 }
 
-TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification_AudioFrameSkip) {
+TEST_F(ProtocolHandlerImplTest, FloodVerification_AudioFrameSkip) {
   const size_t period_msec = 10000;
   const size_t max_messages = 1000;
   InitProtocolHandlerImpl(period_msec, max_messages);
@@ -2755,6 +2833,11 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification_AudioFrameSkip) {
   uint32_t times = 0;
 
   AddSession(waiter, times);
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
 
   // Expect NO flood notification to CH on video data streaming
   for (size_t i = 0; i < max_messages + 1; ++i) {
@@ -2773,7 +2856,7 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerification_AudioFrameSkip) {
   EXPECT_TRUE(waiter->WaitFor(times, period_msec));
 }
 
-TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerificationDisable) {
+TEST_F(ProtocolHandlerImplTest, FloodVerificationDisable) {
   const size_t period_msec = 0;
   const size_t max_messages = 0;
   InitProtocolHandlerImpl(period_msec, max_messages);
@@ -2783,6 +2866,11 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_FloodVerificationDisable) {
   uint32_t times = 0;
 
   AddSession(waiter, times);
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
 
   // Expect NO flood notification to session observer
   for (size_t i = 0; i < max_messages + 1; ++i) {
@@ -2833,7 +2921,7 @@ TEST_F(ProtocolHandlerImplTest, MalformedVerificationDisable) {
   EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
 }
 
-TEST_F(ProtocolHandlerImplTest, DISABLED_MalformedLimitVerification) {
+TEST_F(ProtocolHandlerImplTest, MalformedLimitVerification) {
   const size_t period_msec = 10000;
   const size_t max_messages = 100;
   InitProtocolHandlerImpl(0u, 0u, true, period_msec, max_messages);
@@ -2848,6 +2936,11 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_MalformedLimitVerification) {
   EXPECT_CALL(session_observer_mock, OnMalformedMessageCallback(connection_id))
       .WillOnce(NotifyTestAsyncWaiter(waiter));
   times++;
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
 
   // Sending malformed packets
   const uint8_t malformed_version = PROTOCOL_VERSION_MAX;
@@ -2879,8 +2972,7 @@ TEST_F(ProtocolHandlerImplTest, DISABLED_MalformedLimitVerification) {
   EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
 }
 
-TEST_F(ProtocolHandlerImplTest,
-       DISABLED_MalformedLimitVerification_MalformedStock) {
+TEST_F(ProtocolHandlerImplTest, MalformedLimitVerification_MalformedStock) {
   const size_t period_msec = 10000;
   const size_t max_messages = 100;
   InitProtocolHandlerImpl(0u, 0u, true, period_msec, max_messages);
@@ -2895,6 +2987,11 @@ TEST_F(ProtocolHandlerImplTest,
   EXPECT_CALL(session_observer_mock, OnMalformedMessageCallback(connection_id))
       .WillOnce(NotifyTestAsyncWaiter(waiter));
   times++;
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
 
   // Sending malformed packets
   const uint8_t malformed_version = PROTOCOL_VERSION_MAX;
@@ -3090,8 +3187,7 @@ TEST_F(ProtocolHandlerImplTest,
   protocol_handler_impl->SendEndSession(connection_id, session_id);
 }
 
-TEST_F(ProtocolHandlerImplTest,
-       DISABLED_SendEndServicePrivate_EndSession_MessageSent) {
+TEST_F(ProtocolHandlerImplTest, SendEndServicePrivate_EndSession_MessageSent) {
   // Arrange
   std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
   uint32_t times = 0;
@@ -3208,7 +3304,29 @@ TEST_F(ProtocolHandlerImplTest, SendHeartBeatAck_Successful) {
 }
 
 TEST_F(ProtocolHandlerImplTest,
-       DISABLED_SendHeartBeatAck_WrongProtocolVersion_NotSent) {
+       SendHeartBeatAck_ProtocolVersionUsedFail_Cancelled) {
+  // Arrange
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+  // ProtocolVersionUsed fails
+  EXPECT_CALL(session_observer_mock, ProtocolVersionUsed(connection_id, _, _))
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter),
+                      SetArgReferee<2>(PROTOCOL_VERSION_3),
+                      Return(true)))
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter), Return(false)));
+  times += 2;
+  // Expect no HeartBeatAck sent
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_)).Times(0);
+  // Act
+  SendControlMessage(
+      PROTECTION_OFF, kControl, session_id, FRAME_DATA_HEART_BEAT);
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest, SendHeartBeatAck_WrongProtocolVersion_NotSent) {
   // Arrange
   std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
   uint32_t times = 0;
@@ -3244,7 +3362,6 @@ TEST_F(ProtocolHandlerImplTest,
 
   AddSession(waiter, times);
 
-  const bool is_final = true;
   const uint32_t total_data_size = 1;
   UCharDataVector data(total_data_size);
   RawMessagePtr message = std::make_shared<RawMessage>(
@@ -3269,7 +3386,7 @@ TEST_F(ProtocolHandlerImplTest,
   times++;
 
   // Act
-  protocol_handler_impl->SendMessageToMobileApp(message, is_final);
+  protocol_handler_impl->SendMessageToMobileApp(message, kFinalMessage);
 
   EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
 }
@@ -3282,7 +3399,6 @@ TEST_F(ProtocolHandlerImplTest,
 
   AddSession(waiter, times);
 
-  const bool is_final = true;
   const uint32_t total_data_size = 1;
   UCharDataVector data(total_data_size);
   RawMessagePtr message = std::make_shared<RawMessage>(
@@ -3312,7 +3428,7 @@ TEST_F(ProtocolHandlerImplTest,
   times++;
 
   // Act
-  protocol_handler_impl->SendMessageToMobileApp(message, is_final);
+  protocol_handler_impl->SendMessageToMobileApp(message, kFinalMessage);
 
   EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
 }
@@ -3324,7 +3440,6 @@ TEST_F(ProtocolHandlerImplTest, SendMessageToMobileApp_SendMultiframeMessage) {
 
   AddSession(waiter, times);
 
-  const bool is_final = true;
   const uint32_t total_data_size = MAXIMUM_FRAME_DATA_V2_SIZE * 2;
   UCharDataVector data(total_data_size);
   const uint8_t first_consecutive_frame = 0x01;
@@ -3367,10 +3482,871 @@ TEST_F(ProtocolHandlerImplTest, SendMessageToMobileApp_SendMultiframeMessage) {
   times++;
 
   // Act
+  protocol_handler_impl->SendMessageToMobileApp(message, kFinalMessage);
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       AddProtocolObserver_NullObserver_CountNotChanged) {
+  ASSERT_EQ(0u, protocol_handler_impl->get_protocol_observers_count());
+
+  protocol_handler_impl->AddProtocolObserver(NULL);
+  EXPECT_EQ(0u, protocol_handler_impl->get_protocol_observers_count());
+}
+
+TEST_F(ProtocolHandlerImplTest, AddProtocolObserver_CorrectData_CountIncrease) {
+  ASSERT_EQ(0u, protocol_handler_impl->get_protocol_observers_count());
+
+  protocol_handler_impl->AddProtocolObserver(&protocol_observer_mock);
+  EXPECT_EQ(1u, protocol_handler_impl->get_protocol_observers_count());
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       RemoveProtocolObserver_NullObserver_CountNotChanged) {
+  ASSERT_EQ(0u, protocol_handler_impl->get_protocol_observers_count());
+
+  protocol_handler_impl->AddProtocolObserver(&protocol_observer_mock);
+  ASSERT_EQ(1u, protocol_handler_impl->get_protocol_observers_count());
+
+  protocol_handler_impl->RemoveProtocolObserver(NULL);
+  EXPECT_EQ(1u, protocol_handler_impl->get_protocol_observers_count());
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       RemoveProtocolObserver_CorrectData_CountDecrease) {
+  ASSERT_EQ(0u, protocol_handler_impl->get_protocol_observers_count());
+
+  protocol_handler_impl->AddProtocolObserver(&protocol_observer_mock);
+  ASSERT_EQ(1u, protocol_handler_impl->get_protocol_observers_count());
+
+  protocol_handler_impl->RemoveProtocolObserver(&protocol_observer_mock);
+  EXPECT_EQ(0u, protocol_handler_impl->get_protocol_observers_count());
+}
+
+TEST_F(ProtocolHandlerImplTest, GetSessionObserver_CorrectObserver) {
+  EXPECT_EQ(&session_observer_mock,
+            &(protocol_handler_impl->get_session_observer()));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       SendMessageToMobileApp_NullMessagePointer_Cancelled) {
+  // Arrange
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+
+  const bool is_final = true;
+#ifdef ENABLE_SECURITY
+  EXPECT_CALL(session_observer_mock, GetSSLContext(_, _)).Times(0);
+#endif  // ENABLE_SECURITY
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_)).Times(0);
+  // Act
+  RawMessagePtr message;
   protocol_handler_impl->SendMessageToMobileApp(message, is_final);
 
   EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
 }
+
+TEST_F(ProtocolHandlerImplTest, OnTMMessageReceiveFailed) {
+  // Empty test, because the method is not yet implemented.
+  transport_manager::DataReceiveError data_receive_error;
+  tm_listener->OnTMMessageReceiveFailed(data_receive_error);
+}
+
+TEST_F(ProtocolHandlerImplTest, OnTMMessageSend_Success) {
+  OnTMMessageSend();
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       OnTMMessageSend_ReadyToCloseConnection_Disconnect) {
+  OnTMMessageSend();
+  ProtocolFramePtr protocol_packet =
+      std::make_shared<ProtocolPacket>(connection_id,
+                                       PROTOCOL_VERSION_3,
+                                       PROTECTION_OFF,
+                                       FRAME_TYPE_SINGLE,
+                                       kRpc,
+                                       FRAME_DATA_SINGLE,
+                                       session_id,
+                                       0u,
+                                       message_id,
+                                       null_data_);
+
+  RawMessagePtr message = protocol_packet->serializePacket();
+  EXPECT_CALL(session_observer_mock,
+              PairFromKey(message->connection_key(), _, _))
+      .WillOnce(
+          DoAll(SetArgPointee<1>(connection_id), SetArgPointee<2>(session_id)));
+
+  EXPECT_CALL(transport_manager_mock, Disconnect(connection_id));
+  EXPECT_CALL(session_observer_mock, ProtocolVersionUsed(_, _, _)).Times(0);
+
+  tm_listener->OnTMMessageSend(message);
+}
+
+TEST_F(ProtocolHandlerImplTest, OnTMMessageSend_InvalidData_Cancelled) {
+  const uint8_t data_size = 8u;
+  uint8_t data[data_size];
+  // Create invalid data
+  for (uint8_t i = 0; i < data_size; ++i) {
+    data[i] = -1;
+  }
+  RawMessagePtr message = std::make_shared<RawMessage>(
+      connection_key, PROTOCOL_VERSION_3, &data[0], data_size);
+  EXPECT_CALL(session_observer_mock,
+              PairFromKey(message->connection_key(), _, _))
+      .WillOnce(
+          DoAll(SetArgPointee<1>(connection_id), SetArgPointee<2>(session_id)));
+
+  EXPECT_CALL(transport_manager_mock, Disconnect(0)).Times(0);
+  EXPECT_CALL(session_observer_mock, ProtocolVersionUsed(_, _, _)).Times(0);
+
+  tm_listener->OnTMMessageSend(message);
+}
+
+TEST_F(ProtocolHandlerImplTest, OnTMMessageSendFailed) {
+  // Method not yet implemented. Empty test for coverage.
+  transport_manager::DataSendError data_send_error;
+  const uint8_t data_size = 8u;
+  uint8_t data[data_size];
+  RawMessagePtr message = std::make_shared<RawMessage>(
+      connection_key, PROTOCOL_VERSION_3, &data[0], data_size);
+
+  tm_listener->OnTMMessageSendFailed(data_send_error, message);
+}
+
+TEST_F(ProtocolHandlerImplTest, OnConnectionClosed) {
+  // In this call we cannot track any calls and values
+  // So there is just covering of lines
+  auto protocol_handler_implas_listener =
+      static_cast<TransportManagerListener*>(protocol_handler_impl.get());
+  protocol_handler_implas_listener->OnConnectionClosed(connection_id);
+}
+
+TEST_F(ProtocolHandlerImplTest, SendFrame_NullMessage_ResultFail) {
+  auto protocol_handler_implas_listener =
+      static_cast<protocol_handler::impl::ToMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_)).Times(0);
+  protocol_handler::impl::RawFordMessageToMobile null_message;
+  protocol_handler_implas_listener->Handle(null_message);
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       SendFrame_SendMessageToDeviceFailed_ResultFail) {
+  auto protocol_handler_implas_listener =
+      static_cast<protocol_handler::impl::ToMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+  protocol_handler::impl::RawFordMessageToMobile message(
+      std::make_shared<protocol_handler::ProtocolPacket>(connection_id,
+                                                         PROTOCOL_VERSION_3,
+                                                         PROTECTION_OFF,
+                                                         FRAME_TYPE_CONTROL,
+                                                         kControl,
+                                                         FRAME_DATA_HEART_BEAT,
+                                                         session_id,
+                                                         some_data.size(),
+                                                         message_id,
+                                                         &some_data[0]),
+      kFinalMessage);
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_))
+      .WillOnce(Return(transport_manager::E_INTERNAL_ERROR));
+  protocol_handler_implas_listener->Handle(message);
+}
+
+TEST_F(ProtocolHandlerImplTest, HandleSingleFrameMessage_ResultOk) {
+  auto protocol_handler_implas_listener =
+      static_cast<protocol_handler::impl::FromMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+  protocol_handler::impl::RawFordMessageFromMobile message(
+      std::make_shared<protocol_handler::ProtocolPacket>(connection_id,
+                                                         PROTOCOL_VERSION_3,
+                                                         PROTECTION_OFF,
+                                                         FRAME_TYPE_SINGLE,
+                                                         kControl,
+                                                         FRAME_DATA_SINGLE,
+                                                         session_id,
+                                                         1u,
+                                                         message_id,
+                                                         &some_data[0]));
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
+
+  protocol_handler_impl->SetTelemetryObserver(&telemetry_observer_mock);
+  EXPECT_CALL(telemetry_observer_mock, EndMessageProcess(_));
+
+  protocol_handler_implas_listener->Handle(message);
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       HandleControlMessageEndServiceACK_SessionKeyZero_ResultFail) {
+  auto protocol_handler_impl_as_listener =
+      static_cast<protocol_handler::impl::FromMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+  protocol_handler::impl::RawFordMessageFromMobile message(
+      std::make_shared<protocol_handler::ProtocolPacket>(
+          connection_id,
+          PROTOCOL_VERSION_3,
+          PROTECTION_OFF,
+          FRAME_TYPE_CONTROL,
+          kControl,
+          FRAME_DATA_END_SERVICE_ACK,
+          session_id,
+          some_data.size(),
+          message_id,
+          &some_data[0]));
+
+  EXPECT_CALL(session_observer_mock,
+              OnSessionEndedCallback(
+                  connection_id, session_id, An<uint32_t*>(), kControl))
+      .WillOnce(Return(kInvalidSessionId));
+
+  protocol_handler_impl_as_listener->Handle(message);
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       HandleControlMessageEndServiceACK_SessionKeyNotZero_ResultOk) {
+  auto protocol_handler_impl_as_listener =
+      static_cast<protocol_handler::impl::FromMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+  protocol_handler::impl::RawFordMessageFromMobile message(
+      std::make_shared<protocol_handler::ProtocolPacket>(
+          connection_id,
+          PROTOCOL_VERSION_3,
+          PROTECTION_OFF,
+          FRAME_TYPE_CONTROL,
+          kControl,
+          FRAME_DATA_END_SERVICE_ACK,
+          session_id,
+          some_data.size(),
+          message_id,
+          &some_data[0]));
+  EXPECT_CALL(session_observer_mock,
+              OnSessionEndedCallback(
+                  connection_id, session_id, An<uint32_t*>(), kControl))
+      .WillOnce(Return(kValidSessionId));
+
+  protocol_handler_impl_as_listener->Handle(message);
+}
+
+TEST_F(ProtocolHandlerImplTest, HandleControlMessage_HeartBeatAck_ResultOk) {
+  auto protocol_handler_impl_as_listener =
+      static_cast<protocol_handler::impl::FromMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+  protocol_handler::impl::RawFordMessageFromMobile message(
+      std::make_shared<protocol_handler::ProtocolPacket>(
+          connection_id,
+          PROTOCOL_VERSION_3,
+          PROTECTION_OFF,
+          FRAME_TYPE_CONTROL,
+          kControl,
+          FRAME_DATA_HEART_BEAT_ACK,
+          session_id,
+          some_data.size(),
+          message_id,
+          &some_data[0]));
+  EXPECT_CALL(session_observer_mock,
+              OnSessionEndedCallback(_, _, An<uint32_t*>(), _)).Times(0);
+  EXPECT_CALL(session_observer_mock, OnSessionStartedCallback(_, _, _, _, _))
+      .Times(0);
+
+  protocol_handler_impl_as_listener->Handle(message);
+}
+
+TEST_F(ProtocolHandlerImplTest, HandleControlMessage_Default_ResultOk) {
+  auto protocol_handler_impl_as_listener =
+      static_cast<protocol_handler::impl::FromMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+  protocol_handler::impl::RawFordMessageFromMobile message(
+      std::make_shared<protocol_handler::ProtocolPacket>(
+          connection_id,
+          PROTOCOL_VERSION_3,
+          PROTECTION_OFF,
+          FRAME_TYPE_CONTROL,
+          kControl,
+          FRAME_DATA_END_SERVICE_NACK,
+          session_id,
+          some_data.size(),
+          message_id,
+          &some_data[0]));
+  EXPECT_CALL(session_observer_mock,
+              OnSessionEndedCallback(_, _, An<uint32_t*>(), _)).Times(0);
+  EXPECT_CALL(session_observer_mock, OnSessionStartedCallback(_, _, _, _, _))
+      .Times(0);
+
+  protocol_handler_impl_as_listener->Handle(message);
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       GetHashId_FirstProtocolVersion_HashNotSupported) {
+  auto protocol_handler_impl_as_listener =
+      static_cast<protocol_handler::impl::FromMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+  protocol_handler::impl::RawFordMessageFromMobile message(
+      std::make_shared<protocol_handler::ProtocolPacket>(
+          connection_id,
+          PROTOCOL_VERSION_1,
+          PROTECTION_OFF,
+          FRAME_TYPE_CONTROL,
+          kControl,
+          FRAME_DATA_END_SERVICE_ACK,
+          session_id,
+          some_data.size(),
+          message_id,
+          &some_data[0]));
+
+  uint32_t hash_id;
+  EXPECT_CALL(session_observer_mock,
+              OnSessionEndedCallback(
+                  connection_id, session_id, An<uint32_t*>(), kControl))
+      .WillOnce(DoAll(SaveArgPointee<2>(&hash_id), Return(kInvalidSessionId)));
+
+  protocol_handler_impl_as_listener->Handle(message);
+
+  EXPECT_EQ(hash_id, protocol_handler::HASH_ID_NOT_SUPPORTED);
+}
+
+TEST_F(ProtocolHandlerImplTest, GetHashId_CorrectData_CorrectHash) {
+  auto protocol_handler_impl_as_listener =
+      static_cast<protocol_handler::impl::FromMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+
+  // 4 - because hash id not works with data.size < 4
+  some_data.resize(4);
+  std::fill(some_data.begin(), some_data.end(), 0xAA);
+
+  protocol_handler::impl::RawFordMessageFromMobile message(
+      std::make_shared<protocol_handler::ProtocolPacket>(
+          connection_id,
+          PROTOCOL_VERSION_3,
+          PROTECTION_OFF,
+          FRAME_TYPE_CONTROL,
+          kControl,
+          FRAME_DATA_END_SERVICE_ACK,
+          session_id,
+          some_data.size(),
+          message_id,
+          &some_data[0]));
+
+  const uint32_t exp_hash_id =
+      BE_TO_LE32(*(reinterpret_cast<uint32_t*>(some_data.data())));
+  uint32_t hash_id;
+
+  EXPECT_CALL(session_observer_mock,
+              OnSessionEndedCallback(
+                  connection_id, session_id, An<uint32_t*>(), kControl))
+      .WillOnce(DoAll(SaveArgPointee<2>(&hash_id), Return(kValidSessionId)));
+
+  protocol_handler_impl_as_listener->Handle(message);
+
+  EXPECT_EQ(hash_id, exp_hash_id);
+}
+
+TEST_F(ProtocolHandlerImplTest, PopValideAndExpirateMultiframes) {
+  using namespace protocol_handler;
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+
+  // Create messages so the execution will enter
+  // PopValideAndExpirateMultiframes
+  const uint8_t data_size = 1u;
+  uint8_t data = 7u;
+  ProtocolFramePtr first_frame = CreateFramePtrWithData(data, FRAME_TYPE_FIRST);
+  ProtocolFramePtr consecutive_frame =
+      std::make_shared<ProtocolPacket>(connection_id,
+                                       PROTOCOL_VERSION_3,
+                                       PROTECTION_OFF,
+                                       FRAME_TYPE_CONSECUTIVE,
+                                       kMobileNav,
+                                       FRAME_DATA_LAST_CONSECUTIVE,
+                                       session_id,
+                                       data_size,
+                                       message_id,
+                                       &data);
+
+  protocol_handler_impl->AddProtocolObserver(&protocol_observer_mock);
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
+
+  EXPECT_CALL(session_observer_mock, KeyFromPair(connection_id, _))
+      .WillRepeatedly(Return(connection_id));
+
+  EXPECT_CALL(protocol_observer_mock, OnMessageReceived(_));
+
+  protocol_handler::impl::FromMobileQueue::Handler* handler =
+      protocol_handler_impl.get();
+  protocol_handler::impl::RawFordMessageFromMobile first_message(first_frame);
+  handler->Handle(first_message);
+  protocol_handler::impl::RawFordMessageFromMobile consecutive_message(
+      consecutive_frame);
+  handler->Handle(consecutive_message);
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest, HandleFromMobile_FrameTypeSingle_Handled) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+
+  const uint8_t data_value = 7u;
+  ProtocolFramePtr frame_ptr =
+      CreateFramePtrWithData(data_value, FRAME_TYPE_SINGLE);
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
+
+  protocol_handler_impl->AddProtocolObserver(&protocol_observer_mock);
+  EXPECT_CALL(protocol_observer_mock, OnMessageReceived(_));
+
+  protocol_handler::impl::FromMobileQueue::Handler* handler =
+      protocol_handler_impl.get();
+  protocol_handler::impl::RawFordMessageFromMobile message(frame_ptr);
+  handler->Handle(message);
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+#ifdef ENABLE_SECURITY
+TEST_F(ProtocolHandlerImplTest, EncryptFrame_NoSecurityManagerSet_Cancelled) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+
+  ProtocolFramePtr frame_ptr =
+      std::make_shared<ProtocolPacket>(connection_id,
+                                       PROTOCOL_VERSION_3,
+                                       PROTECTION_OFF,
+                                       FRAME_TYPE_SINGLE,
+                                       kAudio,
+                                       FRAME_DATA_END_SERVICE_ACK,
+                                       session_id,
+                                       0u,
+                                       message_id,
+                                       null_data_);
+
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_)).Times(0);
+
+  protocol_handler::impl::ToMobileQueue::Handler* handler =
+      protocol_handler_impl.get();
+  protocol_handler::impl::RawFordMessageToMobile message(frame_ptr,
+                                                         kFinalMessage);
+  handler->Handle(message);
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       EncryptFrame_ControlFrameType_ContinueUnencrypted) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+  AddSecurityManager();
+
+  const uint8_t data_value = 7u;
+  ProtocolFramePtr frame_ptr =
+      CreateFramePtrWithData(data_value, FRAME_TYPE_CONTROL);
+
+  RawMessagePtr raw_message;
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_))
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter),
+                      SaveArg<0>(&raw_message),
+                      Return(transport_manager::E_SUCCESS)));
+  times++;
+
+  protocol_handler::impl::ToMobileQueue::Handler* handler =
+      protocol_handler_impl.get();
+  protocol_handler::impl::RawFordMessageToMobile message(frame_ptr,
+                                                         kFinalMessage);
+  handler->Handle(message);
+
+  EXPECT_EQ(data_value,
+            raw_message->data()[protocol_handler::PROTOCOL_HEADER_V2_SIZE]);
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       EncryptFrame_SSLContextInitNotCompleted_ContinueUnencrypted) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+  AddSecurityManager();
+
+  const uint8_t data_value = 7u;
+  ProtocolFramePtr frame_ptr =
+      CreateFramePtrWithData(data_value, FRAME_TYPE_SINGLE);
+
+  EXPECT_CALL(session_observer_mock, GetSSLContext(connection_key, _))
+      .WillOnce(
+          DoAll(NotifyTestAsyncWaiter(waiter), Return(&ssl_context_mock)));
+  times++;
+  EXPECT_CALL(ssl_context_mock, IsInitCompleted())
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter), Return(false)));
+  times++;
+
+  RawMessagePtr raw_message;
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_))
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter),
+                      SaveArg<0>(&raw_message),
+                      Return(transport_manager::E_SUCCESS)));
+  times++;
+
+  protocol_handler::impl::ToMobileQueue::Handler* handler =
+      protocol_handler_impl.get();
+  protocol_handler::impl::RawFordMessageToMobile message(frame_ptr,
+                                                         kFinalMessage);
+  handler->Handle(message);
+
+  EXPECT_EQ(data_value,
+            raw_message->data()[protocol_handler::PROTOCOL_HEADER_V2_SIZE]);
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       EncryptFrame_EncryptFailed_ContinueUnencrypted) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+  AddSecurityManager();
+
+  const uint8_t data_value = 7u;
+  ProtocolFramePtr frame_ptr =
+      CreateFramePtrWithData(data_value, FRAME_TYPE_SINGLE);
+
+  EXPECT_CALL(session_observer_mock, GetSSLContext(connection_key, _))
+      .WillOnce(
+          DoAll(NotifyTestAsyncWaiter(waiter), Return(&ssl_context_mock)));
+  times++;
+
+  EXPECT_CALL(ssl_context_mock, IsInitCompleted())
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter), Return(true)));
+  times++;
+
+  EXPECT_CALL(
+      session_observer_mock,
+      OnSessionEndedCallback(connection_id, session_id, An<uint32_t*>(), kRpc));
+
+  const uint8_t data_size = 1u;
+  EXPECT_CALL(ssl_context_mock, Encrypt(frame_ptr->data(), data_size, _, _))
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter), Return(false)));
+  times++;
+
+  RawMessagePtr raw_message;
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_))
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter),
+                      SaveArg<0>(&raw_message),
+                      Return(transport_manager::E_SUCCESS)));
+  times++;
+
+  protocol_handler::impl::ToMobileQueue::Handler* handler =
+      protocol_handler_impl.get();
+  protocol_handler::impl::RawFordMessageToMobile message(frame_ptr,
+                                                         kFinalMessage);
+  handler->Handle(message);
+
+  EXPECT_EQ(data_value,
+            raw_message->data()[protocol_handler::PROTOCOL_HEADER_V2_SIZE]);
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       EncryptFrame_EncryptSucceeded_ContinueEncrypted) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+  AddSecurityManager();
+
+  const uint8_t data_value = 7u;
+  ProtocolFramePtr frame_ptr =
+      CreateFramePtrWithData(data_value, FRAME_TYPE_SINGLE);
+
+  EXPECT_CALL(session_observer_mock, GetSSLContext(connection_key, _))
+      .WillOnce(
+          DoAll(NotifyTestAsyncWaiter(waiter), Return(&ssl_context_mock)));
+  times++;
+
+  EXPECT_CALL(ssl_context_mock, IsInitCompleted())
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter), Return(true)));
+  times++;
+
+  const uint8_t data_size = 1u;
+  const uint8_t encrypted_data = 8u;
+  EXPECT_CALL(ssl_context_mock, Encrypt(frame_ptr->data(), data_size, _, _))
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter),
+                      SetArgPointee<2>(&encrypted_data),
+                      SetArgPointee<3>(data_size),
+                      Return(true)));
+  times++;
+
+  RawMessagePtr raw_message;
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_))
+      .WillOnce(DoAll(NotifyTestAsyncWaiter(waiter),
+                      SaveArg<0>(&raw_message),
+                      Return(transport_manager::E_SUCCESS)));
+  times++;
+
+  protocol_handler::impl::ToMobileQueue::Handler* handler =
+      protocol_handler_impl.get();
+  protocol_handler::impl::RawFordMessageToMobile message(frame_ptr,
+                                                         kFinalMessage);
+  handler->Handle(message);
+
+  EXPECT_EQ(encrypted_data,
+            raw_message->data()[protocol_handler::PROTOCOL_HEADER_V2_SIZE]);
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest, DecryptFrame_NoSecurityManager_Cancelled) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+
+  ProtocolFramePtr frame_ptr =
+      std::make_shared<ProtocolPacket>(connection_id,
+                                       PROTOCOL_VERSION_3,
+                                       PROTECTION_ON,
+                                       FRAME_TYPE_FIRST,
+                                       kAudio,
+                                       FRAME_DATA_FIRST,
+                                       session_id,
+                                       0u,
+                                       message_id,
+                                       null_data_);
+  EXPECT_CALL(ssl_context_mock, Decrypt(_, _, _, _)).Times(0);
+
+  protocol_handler_impl->SetTelemetryObserver(&telemetry_observer_mock);
+  EXPECT_CALL(telemetry_observer_mock, StartMessageProcess(message_id, _))
+      .Times(0);
+
+  tm_listener->OnTMMessageReceived(frame_ptr->serializePacket());
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       DecryptFrame_ProtectionFlagOff_ContinueUndecrypted) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+
+  ProtocolFramePtr frame_ptr =
+      std::make_shared<ProtocolPacket>(connection_id,
+                                       PROTOCOL_VERSION_3,
+                                       PROTECTION_OFF,
+                                       FRAME_TYPE_FIRST,
+                                       kAudio,
+                                       FRAME_DATA_FIRST,
+                                       session_id,
+                                       0u,
+                                       message_id,
+                                       null_data_);
+  EXPECT_CALL(ssl_context_mock, Decrypt(_, _, _, _)).Times(0);
+
+  protocol_handler_impl->SetTelemetryObserver(&telemetry_observer_mock);
+  EXPECT_CALL(telemetry_observer_mock, StartMessageProcess(message_id, _));
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
+
+  tm_listener->OnTMMessageReceived(frame_ptr->serializePacket());
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+/**/
+TEST_F(ProtocolHandlerImplTest,
+       DecryptFrame_FrameTypeControl_ContinueUndecrypted) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+
+  ProtocolFramePtr frame_ptr =
+      std::make_shared<ProtocolPacket>(connection_id,
+                                       PROTOCOL_VERSION_3,
+                                       PROTECTION_ON,
+                                       FRAME_TYPE_CONTROL,
+                                       kControl,
+                                       FRAME_DATA_FIRST,
+                                       session_id,
+                                       0u,
+                                       message_id,
+                                       null_data_);
+  EXPECT_CALL(ssl_context_mock, Decrypt(_, _, _, _)).Times(0);
+
+  protocol_handler_impl->SetTelemetryObserver(&telemetry_observer_mock);
+  EXPECT_CALL(telemetry_observer_mock, StartMessageProcess(message_id, _))
+      .WillOnce(NotifyTestAsyncWaiter(waiter));
+  times++;
+
+  EXPECT_CALL(session_observer_mock,
+              ProtocolVersionUsed(connection_id, session_id, _));
+
+  tm_listener->OnTMMessageReceived(frame_ptr->serializePacket());
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       DecryptFrame_SSLContextInitNotCompleted_Cancelled) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+  AddSecurityManager();
+
+  ProtocolFramePtr frame_ptr =
+      std::make_shared<ProtocolPacket>(connection_id,
+                                       PROTOCOL_VERSION_3,
+                                       PROTECTION_ON,
+                                       FRAME_TYPE_FIRST,
+                                       kAudio,
+                                       FRAME_DATA_FIRST,
+                                       session_id,
+                                       0u,
+                                       message_id,
+                                       null_data_);
+  EXPECT_CALL(session_observer_mock, GetSSLContext(connection_key, _))
+      .WillOnce(Return(&ssl_context_mock));
+  EXPECT_CALL(ssl_context_mock, IsInitCompleted()).WillOnce(Return(false));
+  EXPECT_CALL(ssl_context_mock, Decrypt(_, _, _, _)).Times(0);
+
+  protocol_handler_impl->SetTelemetryObserver(&telemetry_observer_mock);
+  EXPECT_CALL(telemetry_observer_mock, StartMessageProcess(_, _)).Times(0);
+
+  tm_listener->OnTMMessageReceived(frame_ptr->serializePacket());
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest, DecryptFrame_DecryptFailed_Cancelled) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+  AddSecurityManager();
+
+  ProtocolFramePtr frame_ptr =
+      std::make_shared<ProtocolPacket>(connection_id,
+                                       PROTOCOL_VERSION_3,
+                                       PROTECTION_ON,
+                                       FRAME_TYPE_FIRST,
+                                       kAudio,
+                                       FRAME_DATA_FIRST,
+                                       session_id,
+                                       0u,
+                                       message_id,
+                                       null_data_);
+  EXPECT_CALL(session_observer_mock, GetSSLContext(connection_key, _))
+      .WillOnce(Return(&ssl_context_mock));
+  EXPECT_CALL(ssl_context_mock, IsInitCompleted()).WillOnce(Return(true));
+  EXPECT_CALL(ssl_context_mock, Decrypt(_, _, _, _)).WillOnce(Return(false));
+
+  uint32_t session_message_id;
+  EXPECT_CALL(
+      session_observer_mock,
+      OnSessionEndedCallback(connection_id, session_id, An<uint32_t*>(), kRpc))
+      .WillOnce(DoAll(SaveArgPointee<2>(&session_message_id),
+                      Return(kInvalidSessionId)));
+
+  protocol_handler_impl->SetTelemetryObserver(&telemetry_observer_mock);
+  EXPECT_CALL(telemetry_observer_mock, StartMessageProcess(_, _)).Times(0);
+
+  tm_listener->OnTMMessageReceived(frame_ptr->serializePacket());
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+  EXPECT_EQ(session_message_id, message_id);
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       DecryptFrame_DecryptSucceeded_ContinueDecrypted) {
+  std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
+  uint32_t times = 0;
+
+  AddSession(waiter, times);
+  AddSecurityManager();
+
+  ProtocolFramePtr frame_ptr =
+      std::make_shared<ProtocolPacket>(connection_id,
+                                       PROTOCOL_VERSION_3,
+                                       PROTECTION_ON,
+                                       FRAME_TYPE_FIRST,
+                                       kAudio,
+                                       FRAME_DATA_FIRST,
+                                       session_id,
+                                       0u,
+                                       message_id,
+                                       null_data_);
+  EXPECT_CALL(session_observer_mock, GetSSLContext(connection_key, _))
+      .WillOnce(Return(&ssl_context_mock));
+  EXPECT_CALL(ssl_context_mock, IsInitCompleted()).WillOnce(Return(true));
+  const uint8_t data_size = 1u;
+  const uint8_t decrypted_data = 77u;
+  EXPECT_CALL(ssl_context_mock, Decrypt(_, _, _, _))
+      .WillOnce(DoAll(SetArgPointee<2>(&decrypted_data),
+                      SetArgPointee<3>(data_size),
+                      Return(true)));
+  EXPECT_CALL(session_observer_mock,
+              OnSessionEndedCallback(_, _, An<uint32_t*>(), _)).Times(0);
+
+  connection_handler::SessionTransports st;
+  st.primary_transport = connection_id;
+  EXPECT_CALL(connection_handler_mock, GetSessionTransports(session_id))
+      .WillRepeatedly(Return(st));
+
+  protocol_handler_impl->SetTelemetryObserver(&telemetry_observer_mock);
+  EXPECT_CALL(telemetry_observer_mock, StartMessageProcess(message_id, _));
+
+  tm_listener->OnTMMessageReceived(frame_ptr->serializePacket());
+
+  EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest, SendFrame_EncryptFailed_ResultFail) {
+  auto protocol_handler_impl_as_listener =
+      static_cast<protocol_handler::impl::ToMobileQueue::Handler*>(
+          protocol_handler_impl.get());
+  EXPECT_CALL(transport_manager_mock, SendMessageToDevice(_)).Times(0);
+  protocol_handler::impl::RawFordMessageToMobile message(
+      std::make_shared<protocol_handler::ProtocolPacket>(connection_id,
+                                                         PROTOCOL_VERSION_3,
+                                                         PROTECTION_OFF,
+                                                         FRAME_TYPE_SINGLE,
+                                                         kRpc,
+                                                         FRAME_DATA_SINGLE,
+                                                         session_id,
+                                                         some_data.size(),
+                                                         message_id,
+                                                         &some_data[0]),
+      kFinalMessage);
+  protocol_handler_impl_as_listener->Handle(message);
+}
+#endif  // ENABLE_SECURITY
 
 TEST_F(ProtocolHandlerImplTest, SendServiceDataAck_PreVersion5) {
   std::shared_ptr<TestAsyncWaiter> waiter = std::make_shared<TestAsyncWaiter>();
@@ -3421,6 +4397,216 @@ TEST_F(ProtocolHandlerImplTest, SendServiceDataAck_AfterVersion5) {
   protocol_handler_impl->SendFramesNumber(connection_key, 0);
 
   EXPECT_TRUE(waiter->WaitFor(times, kAsyncExpectationsTimeout));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       ConvertPacketDataToString_NullData_EmptyString) {
+  const size_t data_size = 0;
+  EXPECT_EQ(std::string(),
+            protocol_handler::ConvertPacketDataToString(null_data_, data_size));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       ConvertPacketDataToString_ValidCharacteres_CorrectText) {
+  const uint8_t data[] = {'s', 'u', 'c', 'c', 'e', 's', 's'};
+  const size_t data_size = 7;
+  EXPECT_EQ("success",
+            protocol_handler::ConvertPacketDataToString(&data[0], data_size));
+}
+
+TEST_F(ProtocolHandlerImplTest,
+       ConvertPacketDataToString_NotValidCharacters_CorrectText) {
+  const size_t data_size = 7;
+  uint8_t data[data_size];
+  data[0] = 0u;
+  EXPECT_EQ("is raw data",
+            protocol_handler::ConvertPacketDataToString(&data[0], data_size));
+}
+
+TEST_F(ProtocolHandlerImplTest, GetHashId_ProtocolVersion1) {
+  using namespace protocol_handler;
+
+  // Packet without hash data (protocol version less 2)
+  const uint8_t* data = NULL;
+  const size_t data_size = 0;
+
+  ProtocolPacket packet(connection_id,
+                        PROTOCOL_VERSION_1,
+                        PROTECTION_OFF,
+                        FRAME_TYPE_CONTROL,
+                        kRpc,
+                        FRAME_DATA_START_SERVICE,
+                        NEW_SESSION_ID,
+                        data_size,
+                        message_id,
+                        data);
+  uint32_t hash_id = get_hash_id(packet);
+
+  EXPECT_EQ(hash_id, HASH_ID_NOT_SUPPORTED);
+}
+
+TEST_F(ProtocolHandlerImplTest, GetHashId_ProtocolVersion2_WrongDataSize) {
+  using namespace protocol_handler;
+
+  // Packet without hash data (data size less 4)
+  const size_t data_size = 3;
+  uint8_t data[data_size];
+  data[0] = 0u;
+
+  ProtocolPacket packet(connection_id,
+                        PROTOCOL_VERSION_2,
+                        PROTECTION_OFF,
+                        FRAME_TYPE_CONTROL,
+                        kRpc,
+                        FRAME_DATA_START_SERVICE,
+                        NEW_SESSION_ID,
+                        data_size,
+                        message_id,
+                        &data[0]);
+  uint32_t hash_id = get_hash_id(packet);
+
+  EXPECT_EQ(hash_id, HASH_ID_WRONG);
+}
+
+TEST_F(ProtocolHandlerImplTest, GetHashId_ProtocolVersion3_ValidData) {
+  using namespace protocol_handler;
+  const uint32_t exp_hash_id =
+      BE_TO_LE32(*(reinterpret_cast<uint32_t*>(some_data.data())));
+
+  ProtocolPacket packet(connection_id,
+                        PROTOCOL_VERSION_3,
+                        PROTECTION_OFF,
+                        FRAME_TYPE_CONTROL,
+                        kRpc,
+                        FRAME_DATA_START_SERVICE,
+                        NEW_SESSION_ID,
+                        some_data.size(),
+                        message_id,
+                        &some_data[0]);
+  uint32_t hash_id = get_hash_id(packet);
+
+  EXPECT_EQ(hash_id, exp_hash_id);
+}
+
+TEST_F(ProtocolHandlerImplTest, GetHashId_ProtocolVersion3_InvalidData) {
+  using namespace protocol_handler;
+
+  const uint8_t data_size = 8u;
+  uint8_t data[data_size];
+  // Create invalid data
+  for (uint8_t i = 0; i < data_size; ++i) {
+    data[i] = 0;
+  }
+
+  ProtocolPacket packet(connection_id,
+                        PROTOCOL_VERSION_3,
+                        PROTECTION_OFF,
+                        FRAME_TYPE_CONTROL,
+                        kRpc,
+                        FRAME_DATA_START_SERVICE,
+                        NEW_SESSION_ID,
+                        data_size,
+                        message_id,
+                        &data[0]);
+  uint32_t hash_id = get_hash_id(packet);
+
+  EXPECT_EQ(hash_id, HASH_ID_WRONG);
+}
+
+TEST_F(ProtocolHandlerImplTest, GetHashId_ProtocolVersion5_ValidData) {
+  using namespace protocol_handler;
+
+  const uint8_t data_size = 5u;
+  uint8_t data[data_size] = {0x00};
+  data[0] = data_size;
+
+  BsonObject obj = bson_object_from_bytes(&data[0]);
+  const uint32_t exp_hash_id =
+      (uint32_t)bson_object_get_int32(&obj, strings::hash_id);
+  bson_object_deinitialize(&obj);
+
+  ProtocolPacket packet(connection_id,
+                        PROTOCOL_VERSION_5,
+                        PROTECTION_OFF,
+                        FRAME_TYPE_CONTROL,
+                        kRpc,
+                        FRAME_DATA_START_SERVICE,
+                        NEW_SESSION_ID,
+                        data_size,
+                        message_id,
+                        &data[0]);
+  uint32_t hash_id = get_hash_id(packet);
+
+  EXPECT_EQ(hash_id, exp_hash_id);
+}
+
+TEST_F(ProtocolHandlerImplTest, SetHashId_HashIdNotSupported) {
+  using namespace protocol_handler;
+
+  ProtocolPacket packet(connection_id,
+                        PROTOCOL_VERSION_5,
+                        PROTECTION_OFF,
+                        FRAME_TYPE_CONTROL,
+                        kRpc,
+                        FRAME_DATA_START_SERVICE,
+                        NEW_SESSION_ID,
+                        some_data.size(),
+                        message_id,
+                        &some_data[0]);
+
+  set_hash_id(HASH_ID_NOT_SUPPORTED, packet);
+  EXPECT_THAT(some_data,
+              ElementsAreArray(packet.data(), packet.total_data_bytes()));
+
+  set_hash_id(HASH_ID_WRONG, packet);
+  EXPECT_THAT(some_data,
+              ElementsAreArray(packet.data(), packet.total_data_bytes()));
+}
+
+TEST_F(ProtocolHandlerImplTest, SetHashId_ProtocolVersion1) {
+  using namespace protocol_handler;
+
+  uint32_t hash_id = 42;
+  // Packet needs no hash data (protocol version less 2)
+  ProtocolPacket packet(connection_id,
+                        PROTOCOL_VERSION_1,
+                        PROTECTION_OFF,
+                        FRAME_TYPE_CONTROL,
+                        kRpc,
+                        FRAME_DATA_START_SERVICE,
+                        NEW_SESSION_ID,
+                        some_data.size(),
+                        message_id,
+                        &some_data[0]);
+
+  set_hash_id(hash_id, packet);
+  EXPECT_THAT(some_data,
+              ElementsAreArray(packet.data(), packet.total_data_bytes()));
+}
+
+TEST_F(ProtocolHandlerImplTest, SetHashId_ValidData) {
+  using namespace protocol_handler;
+
+  // Packet needs no hash data (protocol version less 2)
+  ProtocolPacket packet(connection_id,
+                        PROTOCOL_VERSION_5,
+                        PROTECTION_OFF,
+                        FRAME_TYPE_CONTROL,
+                        kRpc,
+                        FRAME_DATA_START_SERVICE,
+                        NEW_SESSION_ID,
+                        some_data.size(),
+                        message_id,
+                        &some_data[0]);
+
+  uint32_t hash_id = 42;
+  const uint32_t hash_id_be = LE_TO_BE32(hash_id);
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(&hash_id_be);
+  const uint32_t data_size = sizeof(hash_id_be);
+
+  set_hash_id(hash_id, packet);
+  EXPECT_THAT(std::vector<uint8_t>(data, data + data_size),
+              ElementsAreArray(packet.data(), packet.total_data_bytes()));
 }
 
 }  // namespace protocol_handler_test
