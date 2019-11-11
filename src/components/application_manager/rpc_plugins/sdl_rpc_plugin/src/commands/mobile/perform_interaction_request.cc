@@ -256,6 +256,7 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
       vr_result_code_ = static_cast<hmi_apis::Common_Result::eType>(
           message[strings::params][hmi_response::code].asUInt());
       GetInfo(message, vr_info_);
+
       if (ProcessVRResponse(event.smart_object(), msg_param)) {
         return;
       }
@@ -346,6 +347,17 @@ bool PerformInteractionRequest::ProcessVRResponse(
     return false;
   }
 
+  if ((InteractionMode::VR_ONLY == interaction_mode_ ||
+       InteractionMode::BOTH == interaction_mode_) &&
+      vr_result_code_ == Common_Result::SUCCESS) {
+    // After PerformInteraction response HMI should close UI popup window.
+    // In this case SDL should send UI_ClosePopUp request.
+    smart_objects::SmartObject hmi_request_params =
+        smart_objects::SmartObject(smart_objects::SmartType_Map);
+    hmi_request_params[hmi_request::method_name] = "UI.PerformInteraction";
+    SendHMIRequest(hmi_apis::FunctionID::UI_ClosePopUp, &hmi_request_params);
+  }
+
   const SmartObject& hmi_msg_params = message[strings::msg_params];
   if (hmi_msg_params.keyExists(strings::choice_id)) {
     const int choice_id = hmi_msg_params[strings::choice_id].asInt();
@@ -354,9 +366,11 @@ bool PerformInteractionRequest::ProcessVRResponse(
       TerminatePerformInteraction();
       SendResponse(
           false, Result::GENERIC_ERROR, "Wrong choiceID was received from HMI");
-      return true;
+    } else {
+      msg_params[strings::choice_id] = choice_id;
+      SendResponse(true, mobile_apis::Result::SUCCESS, NULL, &msg_params);
     }
-    msg_params[strings::choice_id] = choice_id;
+    return true;
   }
 
   if (mobile_apis::InteractionMode::BOTH == interaction_mode_ ||
