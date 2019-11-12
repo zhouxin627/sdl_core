@@ -278,8 +278,11 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
 
   if (!HasHMIResponsesToWait()) {
     LOG4CXX_DEBUG(logger_, "Send response in BOTH iteraction mode");
-    if (first_responser_ == FirstPerformInteractionResponser::VR &&
-        interaction_mode_ == mobile_apis::InteractionMode::VR_ONLY) {
+    const bool do_send_vr_params_only =
+        (first_responser_ == FirstPerformInteractionResponser::VR &&
+         interaction_mode_ == mobile_apis::InteractionMode::VR_ONLY);
+    if (do_send_vr_params_only ||
+        IsVRPerformInteractionResponseSuccessfulInBothMode()) {
       SendBothModeResponse(vr_params_);
     } else {
       SendBothModeResponse(msg_param);
@@ -1108,6 +1111,11 @@ PerformInteractionRequest::PrepareResultCodeForResponse(
     }
   }
 
+  if (interaction_mode_ == mobile_apis::InteractionMode::BOTH) {
+    return MessageHelper::HMIToMobileResult(
+        std::min(ui_result_code_, vr_result_code_));
+  }
+
   return CommandRequestImpl::PrepareResultCodeForResponse(ui_response,
                                                           vr_response);
 }
@@ -1121,8 +1129,20 @@ bool PerformInteractionRequest::PrepareResultForMobileResponse(
     }
   }
 
+  if (interaction_mode_ == mobile_apis::InteractionMode::BOTH) {
+    return (vr_response.is_ok || ui_response.is_ok);
+  }
+
   return CommandRequestImpl::PrepareResultForMobileResponse(ui_response,
                                                             vr_response);
+}
+
+bool PerformInteractionRequest::
+    IsVRPerformInteractionResponseSuccessfulInBothMode() {
+  using namespace mobile_apis;
+  app_mngr::commands::ResponseInfo vr_perform_info(
+      vr_result_code_, HmiInterfaces::HMI_INTERFACE_VR, application_manager_);
+  return (vr_perform_info.is_ok && interaction_mode_ == InteractionMode::BOTH);
 }
 
 void PerformInteractionRequest::StoreFirstPerformInteractionResponser(

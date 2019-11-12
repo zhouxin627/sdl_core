@@ -241,6 +241,8 @@ class PerformInteractionRequest
    */
   void SendBothModeResponse(const smart_objects::SmartObject& msg_param);
 
+  bool IsVRPerformInteractionResponseSuccessfulInBothMode();
+
   void StoreFirstPerformInteractionResponser(
       FirstPerformInteractionResponser responser);
 
