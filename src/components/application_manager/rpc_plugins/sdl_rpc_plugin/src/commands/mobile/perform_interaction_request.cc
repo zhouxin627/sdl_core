@@ -361,11 +361,10 @@ bool PerformInteractionRequest::ProcessVRResponse(
     return false;
   }
 
-  // if ((InteractionMode::VR_ONLY == interaction_mode_ ||
-  // InteractionMode::BOTH == interaction_mode_) &&
-  // vr_result_code_ == Common_Result::SUCCESS) {
   if (first_responser_ == FirstPerformInteractionResponser::VR) {
-    // After PerformInteraction response HMI should close UI popup window.
+    // After VR.PerformInteraction response HMI should close UI popup window
+    // if UI.PerformInteraction response comes 
+    // after VR.PerformInteraction response. 
     // In this case SDL should send UI_ClosePopUp request.
     smart_objects::SmartObject hmi_request_params =
         smart_objects::SmartObject(smart_objects::SmartType_Map);
