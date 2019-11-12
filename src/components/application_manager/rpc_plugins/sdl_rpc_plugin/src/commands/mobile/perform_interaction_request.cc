@@ -1112,8 +1112,11 @@ PerformInteractionRequest::PrepareResultCodeForResponse(
   }
 
   if (interaction_mode_ == mobile_apis::InteractionMode::BOTH) {
-    return MessageHelper::HMIToMobileResult(
-        std::min(ui_result_code_, vr_result_code_));
+    if (IsVRPerformInteractionResponseSuccessfulInBothMode()) {
+      return MessageHelper::HMIToMobileResult(vr_result_code_);
+    } else {
+      return MessageHelper::HMIToMobileResult(ui_result_code_);
+    }
   }
 
   return CommandRequestImpl::PrepareResultCodeForResponse(ui_response,
