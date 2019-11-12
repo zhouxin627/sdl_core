@@ -193,8 +193,8 @@ TEST_F(PerformInteractionRequestTest,
       ManageMobileCommand(_, am::commands::Command::CommandSource::SOURCE_SDL))
       .WillOnce(DoAll(SaveArg<0>(&response_to_mobile), Return(true)));
 
-  command->on_event(event_vr);
   command->on_event(event_ui);
+  command->on_event(event_vr);
 
   ResultCommandExpectations(response_to_mobile,
                             "VR is not supported by system");
@@ -242,13 +242,12 @@ TEST_F(PerformInteractionRequestTest,
       ManageMobileCommand(_, am::commands::Command::CommandSource::SOURCE_SDL))
       .WillOnce(DoAll(SaveArg<0>(&response_to_mobile), Return(true)));
 
-  command->on_event(event_vr);
-
   EXPECT_CALL(*mock_app_, is_perform_interaction_active())
       .WillOnce(Return(false));
   EXPECT_CALL(*mock_app_, DeletePerformInteractionChoiceSet(_));
 
   command->on_event(event_ui);
+  command->on_event(event_vr);
 
   ResultCommandExpectations(response_to_mobile,
                             "UI is not supported by system");
