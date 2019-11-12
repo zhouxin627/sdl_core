@@ -71,7 +71,9 @@ PerformInteractionRequest::PerformInteractionRequest(
     , vr_response_received_(false)
     , app_pi_was_active_before_(false)
     , vr_result_code_(hmi_apis::Common_Result::INVALID_ENUM)
-    , ui_result_code_(hmi_apis::Common_Result::INVALID_ENUM) {
+    , ui_result_code_(hmi_apis::Common_Result::INVALID_ENUM)
+    , vr_params_(smart_objects::SmartObject(smart_objects::SmartType_Map))
+    , first_responser_(FirstPerformInteractionResponser::NONE) {
   subscribe_on_event(hmi_apis::FunctionID::UI_OnResetTimeout);
   subscribe_on_event(hmi_apis::FunctionID::VR_OnCommand);
   subscribe_on_event(hmi_apis::FunctionID::Buttons_OnButtonPress);
@@ -241,6 +243,8 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
       LOG4CXX_DEBUG(logger_, "Received UI_PerformInteraction event");
       EndAwaitForInterface(HmiInterfaces::HMI_INTERFACE_UI);
       ui_response_received_ = true;
+      StoreFirstPerformInteractionResponser(
+          FirstPerformInteractionResponser::UI);
       unsubscribe_from_event(hmi_apis::FunctionID::UI_PerformInteraction);
       ui_result_code_ = static_cast<hmi_apis::Common_Result::eType>(
           message[strings::params][hmi_response::code].asUInt());
@@ -252,12 +256,16 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
       LOG4CXX_DEBUG(logger_, "Received VR_PerformInteraction");
       EndAwaitForInterface(HmiInterfaces::HMI_INTERFACE_VR);
       vr_response_received_ = true;
+      StoreFirstPerformInteractionResponser(
+          FirstPerformInteractionResponser::VR);
       unsubscribe_from_event(hmi_apis::FunctionID::VR_PerformInteraction);
       vr_result_code_ = static_cast<hmi_apis::Common_Result::eType>(
           message[strings::params][hmi_response::code].asUInt());
       GetInfo(message, vr_info_);
-
-      if (ProcessVRResponse(event.smart_object(), msg_param)) {
+      const bool response_process_result =
+          ProcessVRResponse(event.smart_object(), msg_param);
+      vr_params_ = msg_param;
+      if (response_process_result) {
         return;
       }
       break;
@@ -270,7 +278,13 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
 
   if (!HasHMIResponsesToWait()) {
     LOG4CXX_DEBUG(logger_, "Send response in BOTH iteraction mode");
-    SendBothModeResponse(msg_param);
+    if (first_responser_ == FirstPerformInteractionResponser::VR &&
+        interaction_mode_ == mobile_apis::InteractionMode::VR_ONLY) {
+      SendBothModeResponse(vr_params_);
+    } else {
+      SendBothModeResponse(msg_param);
+    }
+    first_responser_ = FirstPerformInteractionResponser::NONE;
   }
 }
 
@@ -347,9 +361,10 @@ bool PerformInteractionRequest::ProcessVRResponse(
     return false;
   }
 
-  if ((InteractionMode::VR_ONLY == interaction_mode_ ||
-       InteractionMode::BOTH == interaction_mode_) &&
-      vr_result_code_ == Common_Result::SUCCESS) {
+  // if ((InteractionMode::VR_ONLY == interaction_mode_ ||
+  // InteractionMode::BOTH == interaction_mode_) &&
+  // vr_result_code_ == Common_Result::SUCCESS) {
+  if (first_responser_ == FirstPerformInteractionResponser::VR) {
     // After PerformInteraction response HMI should close UI popup window.
     // In this case SDL should send UI_ClosePopUp request.
     smart_objects::SmartObject hmi_request_params =
@@ -366,11 +381,9 @@ bool PerformInteractionRequest::ProcessVRResponse(
       TerminatePerformInteraction();
       SendResponse(
           false, Result::GENERIC_ERROR, "Wrong choiceID was received from HMI");
-    } else {
-      msg_params[strings::choice_id] = choice_id;
-      SendResponse(true, mobile_apis::Result::SUCCESS, NULL, &msg_params);
+      return true;
     }
-    return true;
+    msg_params[strings::choice_id] = choice_id;
   }
 
   if (mobile_apis::InteractionMode::BOTH == interaction_mode_ ||
@@ -1077,11 +1090,48 @@ void PerformInteractionRequest::SendBothModeResponse(
       msg_param.empty() ? NULL : &msg_param;
   std::string info = app_mngr::commands::MergeInfos(
       ui_perform_info, ui_info_, vr_perform_info, vr_info_);
+
   DisablePerformInteraction();
+
   SendResponse(result,
                perform_interaction_result_code,
                info.empty() ? NULL : info.c_str(),
                response_params);
+}
+
+mobile_apis::Result::eType
+PerformInteractionRequest::PrepareResultCodeForResponse(
+    const app_mngr::commands::ResponseInfo& ui_response,
+    const app_mngr::commands::ResponseInfo& vr_response) {
+  if (interaction_mode_ == mobile_apis::InteractionMode::VR_ONLY) {
+    if (first_responser_ == FirstPerformInteractionResponser::VR) {
+      return MessageHelper::HMIToMobileResult(vr_result_code_);
+    }
+  }
+
+  return CommandRequestImpl::PrepareResultCodeForResponse(ui_response,
+                                                          vr_response);
+}
+
+bool PerformInteractionRequest::PrepareResultForMobileResponse(
+    app_mngr::commands::ResponseInfo& ui_response,
+    app_mngr::commands::ResponseInfo& vr_response) const {
+  if (interaction_mode_ == mobile_apis::InteractionMode::VR_ONLY) {
+    if (first_responser_ == FirstPerformInteractionResponser::VR) {
+      return vr_response.is_ok;
+    }
+  }
+
+  return CommandRequestImpl::PrepareResultForMobileResponse(ui_response,
+                                                            vr_response);
+}
+
+void PerformInteractionRequest::StoreFirstPerformInteractionResponser(
+    FirstPerformInteractionResponser responser) {
+  first_responser_ =
+      (first_responser_ == FirstPerformInteractionResponser::NONE)
+          ? responser
+          : first_responser_;
 }
 
 }  // namespace commands

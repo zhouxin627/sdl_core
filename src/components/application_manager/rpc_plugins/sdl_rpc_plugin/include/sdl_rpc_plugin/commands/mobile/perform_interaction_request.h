@@ -53,6 +53,7 @@ namespace commands {
 class PerformInteractionRequest
     : public app_mngr::commands::CommandRequestImpl {
  public:
+  enum class FirstPerformInteractionResponser { NONE, UI, VR };
   /**
    * @brief PerformInteractionRequest class constructor
    *
@@ -92,6 +93,14 @@ class PerformInteractionRequest
    *
    */
   virtual void onTimeOut();
+
+  virtual mobile_apis::Result::eType PrepareResultCodeForResponse(
+      const app_mngr::commands::ResponseInfo& ui_response,
+      const app_mngr::commands::ResponseInfo& vr_response);
+
+  virtual bool PrepareResultForMobileResponse(
+      app_mngr::commands::ResponseInfo& out_first,
+      app_mngr::commands::ResponseInfo& out_second) const;
 
  private:
   /**
@@ -232,6 +241,9 @@ class PerformInteractionRequest
    */
   void SendBothModeResponse(const smart_objects::SmartObject& msg_param);
 
+  void StoreFirstPerformInteractionResponser(
+      FirstPerformInteractionResponser responser);
+
   mobile_apis::InteractionMode::eType interaction_mode_;
   bool ui_response_received_;
   bool vr_response_received_;
@@ -241,6 +253,8 @@ class PerformInteractionRequest
   hmi_apis::Common_Result::eType ui_result_code_;
   std::string ui_info_;
   std::string vr_info_;
+  smart_objects::SmartObject vr_params_;
+  FirstPerformInteractionResponser first_responser_;
 
   DISALLOW_COPY_AND_ASSIGN(PerformInteractionRequest);
 };
