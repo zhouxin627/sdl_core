@@ -87,24 +87,25 @@ class PerformInteractionRequestTest
   }
 
   void ResultCommandExpectations(MessageSharedPtr msg,
-                                  bool success,
-                                  hmi_apis::Common_Result::eType result_code,
+                                 bool success,
+                                 hmi_apis::Common_Result::eType result_code,
                                  const std::string& info) {
     EXPECT_EQ((*msg)[am::strings::msg_params][am::strings::success].asBool(),
               success);
-    EXPECT_EQ(
-        (*msg)[am::strings::msg_params][am::strings::result_code].asInt(),
-        static_cast<int32_t>(result_code));
+    EXPECT_EQ((*msg)[am::strings::msg_params][am::strings::result_code].asInt(),
+              static_cast<int32_t>(result_code));
     EXPECT_EQ((*msg)[am::strings::msg_params][am::strings::info].asString(),
               info);
   }
 
-  void HMIRequestExpectations(MessageSharedPtr msg, hmi_apis::FunctionID::eType function_id, const std::string& method_name) {
+  void HMIRequestExpectations(MessageSharedPtr msg,
+                              hmi_apis::FunctionID::eType function_id,
+                              const std::string& method_name) {
     EXPECT_EQ((*msg)[am::strings::params][am::strings::function_id].asInt(),
               static_cast<int32_t>(function_id));
-    EXPECT_EQ(
-        (*msg)[am::strings::msg_params][am::hmi_request::method_name].asString(),
-        method_name);
+    EXPECT_EQ((*msg)[am::strings::msg_params][am::hmi_request::method_name]
+                  .asString(),
+              method_name);
   }
 
   sync_primitives::Lock lock_;
@@ -165,7 +166,7 @@ TEST_F(PerformInteractionRequestTest,
       mobile_apis::InteractionMode::VR_ONLY;
   std::shared_ptr<PerformInteractionRequest> command =
       CreateCommand<PerformInteractionRequest>(msg_from_mobile);
-  
+
   ASSERT_TRUE(command->Init());
 
   MockAppPtr mock_app;
@@ -207,9 +208,9 @@ TEST_F(PerformInteractionRequestTest,
   command->on_event(event_vr);
   command->on_event(event_ui);
 
-  ResultCommandExpectations(response_to_mobile, 
-                            false, 
-                            hmi_apis::Common_Result::UNSUPPORTED_RESOURCE, 
+  ResultCommandExpectations(response_to_mobile,
+                            false,
+                            hmi_apis::Common_Result::UNSUPPORTED_RESOURCE,
                             "VR is not supported by system");
 }
 
@@ -222,7 +223,7 @@ TEST_F(PerformInteractionRequestTest,
       mobile_apis::InteractionMode::VR_ONLY;
   std::shared_ptr<PerformInteractionRequest> command =
       CreateCommand<PerformInteractionRequest>(msg_from_mobile);
-  
+
   ASSERT_TRUE(command->Init());
 
   MockAppPtr mock_app;
@@ -252,7 +253,7 @@ TEST_F(PerformInteractionRequestTest,
       mock_rpc_service_,
       ManageMobileCommand(_, am::commands::Command::CommandSource::SOURCE_SDL))
       .WillOnce(DoAll(SaveArg<0>(&response_to_mobile), Return(true)));
-  
+
   command->on_event(event_vr);
   command->on_event(event_ui);
 
@@ -262,7 +263,9 @@ TEST_F(PerformInteractionRequestTest,
                             "UI is not supported by system");
 }
 
-TEST_F(PerformInteractionRequestTest, PrepareResultCodeAndResponseForMobile_GetVRResultCodeOnly_InVR_OnlyMode_SUCCESS) {
+TEST_F(
+    PerformInteractionRequestTest,
+    PrepareResultCodeAndResponseForMobile_GetVRResultCodeOnly_InVR_OnlyMode_SUCCESS) {
   ON_CALL(mock_hmi_interfaces_,
           GetInterfaceState(am::HmiInterfaces::HMI_INTERFACE_UI))
       .WillByDefault(Return(am::HmiInterfaces::STATE_AVAILABLE));
@@ -277,7 +280,7 @@ TEST_F(PerformInteractionRequestTest, PrepareResultCodeAndResponseForMobile_GetV
       mobile_apis::InteractionMode::VR_ONLY;
   std::shared_ptr<PerformInteractionRequest> command =
       CreateCommand<PerformInteractionRequest>(msg_from_mobile);
-  
+
   ASSERT_TRUE(command->Init());
 
   MessageSharedPtr response_msg_vr =
@@ -295,16 +298,20 @@ TEST_F(PerformInteractionRequestTest, PrepareResultCodeAndResponseForMobile_GetV
   vr_perform_info.is_ok = true;
 
   command->on_event(event_vr);
-  auto result_code = command->PrepareResultCodeForResponse(ui_perform_info,vr_perform_info);
+  auto result_code =
+      command->PrepareResultCodeForResponse(ui_perform_info, vr_perform_info);
   EXPECT_EQ(result_code, mobile_apis::Result::SUCCESS);
   EXPECT_NE(result_code, mobile_apis::Result::UNSUPPORTED_RESOURCE);
 
-  auto result_success = command->PrepareResultForMobileResponse(ui_perform_info,vr_perform_info);
+  auto result_success =
+      command->PrepareResultForMobileResponse(ui_perform_info, vr_perform_info);
   EXPECT_EQ(result_success, vr_perform_info.is_ok);
   EXPECT_NE(result_success, ui_perform_info.is_ok);
 }
 
-TEST_F(PerformInteractionRequestTest, PrepareResultCodeAndResponseForMobile_GetUI_SuccessCode_And_VR_ErrorInfo_InBOTH_Mode_SUCCESS) {
+TEST_F(
+    PerformInteractionRequestTest,
+    PrepareResultCodeAndResponseForMobile_GetUI_SuccessCode_And_VR_ErrorInfo_InBOTH_Mode_SUCCESS) {
   ON_CALL(mock_hmi_interfaces_,
           GetInterfaceState(am::HmiInterfaces::HMI_INTERFACE_UI))
       .WillByDefault(Return(am::HmiInterfaces::STATE_AVAILABLE));
@@ -319,7 +326,7 @@ TEST_F(PerformInteractionRequestTest, PrepareResultCodeAndResponseForMobile_GetU
       mobile_apis::InteractionMode::BOTH;
   std::shared_ptr<PerformInteractionRequest> command =
       CreateCommand<PerformInteractionRequest>(msg_from_mobile);
- 
+
   ASSERT_TRUE(command->Init());
 
   MessageSharedPtr response_msg_vr =
@@ -348,9 +355,9 @@ TEST_F(PerformInteractionRequestTest, PrepareResultCodeAndResponseForMobile_GetU
       .WillOnce(DoAll(SaveArg<0>(&response_to_mobile), Return(true)));
 
   MessageSharedPtr request_to_hmi;
-  EXPECT_CALL(
-      mock_rpc_service_,
-      ManageHMICommand(_, am::commands::Command::CommandSource::SOURCE_SDL_TO_HMI))
+  EXPECT_CALL(mock_rpc_service_,
+              ManageHMICommand(
+                  _, am::commands::Command::CommandSource::SOURCE_SDL_TO_HMI))
       .WillOnce(DoAll(SaveArg<0>(&request_to_hmi), Return(true)));
 
   command->on_event(event_vr);
