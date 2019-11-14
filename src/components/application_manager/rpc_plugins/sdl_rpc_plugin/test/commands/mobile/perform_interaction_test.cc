@@ -165,7 +165,8 @@ TEST_F(PerformInteractionRequestTest,
       mobile_apis::InteractionMode::VR_ONLY;
   std::shared_ptr<PerformInteractionRequest> command =
       CreateCommand<PerformInteractionRequest>(msg_from_mobile);
-  command->Init();
+  
+  ASSERT_TRUE(command->Init());
 
   MockAppPtr mock_app;
   EXPECT_CALL(app_mngr_, application(_)).WillRepeatedly(Return(mock_app));
@@ -221,6 +222,8 @@ TEST_F(PerformInteractionRequestTest,
       mobile_apis::InteractionMode::VR_ONLY;
   std::shared_ptr<PerformInteractionRequest> command =
       CreateCommand<PerformInteractionRequest>(msg_from_mobile);
+  
+  ASSERT_TRUE(command->Init());
 
   MockAppPtr mock_app;
   EXPECT_CALL(app_mngr_, application(_)).WillRepeatedly(Return(mock_app));
