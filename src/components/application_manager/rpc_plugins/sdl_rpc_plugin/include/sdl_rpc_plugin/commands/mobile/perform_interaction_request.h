@@ -53,6 +53,9 @@ namespace commands {
 class PerformInteractionRequest
     : public app_mngr::commands::CommandRequestImpl {
  public:
+  /**
+   * @brief Enum, defines which PerformInteraction response came first
+   */
   enum class FirstPerformInteractionResponser { NONE, UI, VR };
   /**
    * @brief PerformInteractionRequest class constructor
@@ -94,10 +97,28 @@ class PerformInteractionRequest
    */
   virtual void onTimeOut();
 
+  /**
+   * @brief Prepare result code for sending to mobile application
+   * @param first contains result_code from HMI response and
+   * interface that returns response
+   * @param second contains result_code from HMI response and
+   * interface that returns response.
+   * @return resulting code for sending to mobile application.
+   */
   virtual mobile_apis::Result::eType PrepareResultCodeForResponse(
       const app_mngr::commands::ResponseInfo& ui_response,
       const app_mngr::commands::ResponseInfo& vr_response);
 
+  /**
+   * @brief Checks result code from HMI for splitted RPC
+   * and returns parameter for sending to mobile app.
+   * @param first contains result_code from HMI response and
+   * interface that returns response
+   * @param second contains result_code from HMI response and
+   * interface that returns response
+   * @return true if result code complies successful result code
+   * otherwise returns false
+   */
   virtual bool PrepareResultForMobileResponse(
       app_mngr::commands::ResponseInfo& out_first,
       app_mngr::commands::ResponseInfo& out_second) const;
@@ -241,8 +262,17 @@ class PerformInteractionRequest
    */
   void SendBothModeResponse(const smart_objects::SmartObject& msg_param);
 
+  /**
+   * @brief Check if VR.PerformInteraction response successful in
+   * InteractionMode::BOTH
+   * @return true, if successful, otherwise - false.
+   */
   bool IsVRPerformInteractionResponseSuccessfulInBothMode();
 
+  /**
+   * @brief Stores first response type to PerformInteraction request that comes.
+   * @param enum FirstPerformInteractionResponser
+   */
   void StoreFirstPerformInteractionResponser(
       FirstPerformInteractionResponser responser);
 
