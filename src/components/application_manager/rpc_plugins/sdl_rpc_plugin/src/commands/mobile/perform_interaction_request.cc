@@ -1104,6 +1104,11 @@ mobile_apis::Result::eType
 PerformInteractionRequest::PrepareResultCodeForResponse(
     const app_mngr::commands::ResponseInfo& ui_response,
     const app_mngr::commands::ResponseInfo& vr_response) {
+  LOG4CXX_DEBUG(logger_,
+                "InteractionMode = " << static_cast<int32_t>(interaction_mode_)
+                                     << " | FirstAnsweredInterface = "
+                                     << static_cast<int32_t>(first_responser_));
+
   if (mobile_apis::InteractionMode::VR_ONLY == interaction_mode_) {
     if (FirstAnsweredInterface::VR == first_responser_) {
       return MessageHelper::HMIToMobileResult(vr_result_code_);
