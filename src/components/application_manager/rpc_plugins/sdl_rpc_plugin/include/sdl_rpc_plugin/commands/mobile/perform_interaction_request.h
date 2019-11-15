@@ -54,9 +54,11 @@ class PerformInteractionRequest
     : public app_mngr::commands::CommandRequestImpl {
  public:
   /**
-   * @brief Enum, defines which interface, VR or UI, sent PerformInteraction response first
-   * In case of interaction_mode_ == InteractionMode::VR_ONLY SDL must know which interface responsed first
-   * If first responsed interface is VR, then SDL should trigger closing UI popup window by sending UI_ClosePopUp request to HMI
+   * @brief Enum, defines which interface, VR or UI, sent PerformInteraction
+   * response first In case of interaction_mode_ == InteractionMode::VR_ONLY SDL
+   * must know which interface responsed first If first responsed interface is
+   * VR, then SDL should trigger closing UI popup window by sending
+   * UI_ClosePopUp request to HMI
    */
   enum class FirstAnsweredInterface { NONE, UI, VR };
   /**
@@ -275,8 +277,7 @@ class PerformInteractionRequest
    * @brief Stores first response type to PerformInteraction request that comes.
    * @param enum FirstAnsweredInterface
    */
-  void StoreFirstAnsweredInterface(
-      FirstAnsweredInterface responser);
+  void StoreFirstAnsweredInterface(FirstAnsweredInterface responser);
 
   mobile_apis::InteractionMode::eType interaction_mode_;
   bool ui_response_received_;

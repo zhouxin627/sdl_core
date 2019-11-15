@@ -243,8 +243,7 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
       LOG4CXX_DEBUG(logger_, "Received UI_PerformInteraction event");
       EndAwaitForInterface(HmiInterfaces::HMI_INTERFACE_UI);
       ui_response_received_ = true;
-      StoreFirstAnsweredInterface(
-          FirstAnsweredInterface::UI);
+      StoreFirstAnsweredInterface(FirstAnsweredInterface::UI);
       unsubscribe_from_event(hmi_apis::FunctionID::UI_PerformInteraction);
       ui_result_code_ = static_cast<hmi_apis::Common_Result::eType>(
           message[strings::params][hmi_response::code].asUInt());
@@ -256,8 +255,7 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
       LOG4CXX_DEBUG(logger_, "Received VR_PerformInteraction");
       EndAwaitForInterface(HmiInterfaces::HMI_INTERFACE_VR);
       vr_response_received_ = true;
-      StoreFirstAnsweredInterface(
-          FirstAnsweredInterface::VR);
+      StoreFirstAnsweredInterface(FirstAnsweredInterface::VR);
       unsubscribe_from_event(hmi_apis::FunctionID::VR_PerformInteraction);
       vr_result_code_ = static_cast<hmi_apis::Common_Result::eType>(
           message[strings::params][hmi_response::code].asUInt());
@@ -372,7 +370,8 @@ bool PerformInteractionRequest::ProcessVRResponse(
     const std::string kUIPerformInteractionMethodName = "UI.PerformInteraction";
     smart_objects::SmartObject hmi_request_params =
         smart_objects::SmartObject(smart_objects::SmartType_Map);
-    hmi_request_params[hmi_request::method_name] = kUIPerformInteractionMethodName;
+    hmi_request_params[hmi_request::method_name] =
+        kUIPerformInteractionMethodName;
     SendHMIRequest(hmi_apis::FunctionID::UI_ClosePopUp, &hmi_request_params);
   }
 
