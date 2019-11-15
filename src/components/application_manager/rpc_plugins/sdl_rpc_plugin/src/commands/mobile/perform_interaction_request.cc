@@ -277,8 +277,8 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
   if (!HasHMIResponsesToWait()) {
     LOG4CXX_DEBUG(logger_, "Send response in BOTH iteraction mode");
     const bool send_vr_params_only =
-        (first_responser_ == FirstAnsweredInterface::VR &&
-         interaction_mode_ == mobile_apis::InteractionMode::VR_ONLY);
+        (FirstAnsweredInterface::VR == first_responser_ &&
+         mobile_apis::InteractionMode::VR_ONLY == interaction_mode_);
     if (send_vr_params_only ||
         IsVRPerformInteractionResponseSuccessfulInBothMode()) {
       SendBothModeResponse(vr_params_);
@@ -367,11 +367,10 @@ bool PerformInteractionRequest::ProcessVRResponse(
     // if UI.PerformInteraction response comes
     // after VR.PerformInteraction response.
     // In this case SDL should send UI_ClosePopUp request.
-    const std::string kUIPerformInteractionMethodName = "UI.PerformInteraction";
+    const std::string method_name = "UI.PerformInteraction";
     smart_objects::SmartObject hmi_request_params =
         smart_objects::SmartObject(smart_objects::SmartType_Map);
-    hmi_request_params[hmi_request::method_name] =
-        kUIPerformInteractionMethodName;
+    hmi_request_params[hmi_request::method_name] = method_name;
     SendHMIRequest(hmi_apis::FunctionID::UI_ClosePopUp, &hmi_request_params);
   }
 
@@ -1111,7 +1110,7 @@ PerformInteractionRequest::PrepareResultCodeForResponse(
     }
   }
 
-  if (interaction_mode_ == mobile_apis::InteractionMode::BOTH) {
+  if (mobile_apis::InteractionMode::BOTH == interaction_mode_) {
     if (IsVRPerformInteractionResponseSuccessfulInBothMode()) {
       return MessageHelper::HMIToMobileResult(vr_result_code_);
     }

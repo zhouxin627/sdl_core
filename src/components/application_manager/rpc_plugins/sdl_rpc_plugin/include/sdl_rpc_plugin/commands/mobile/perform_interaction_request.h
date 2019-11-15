@@ -55,10 +55,10 @@ class PerformInteractionRequest
  public:
   /**
    * @brief Enum, defines which interface, VR or UI, sent PerformInteraction
-   * response first In case of interaction_mode_ == InteractionMode::VR_ONLY SDL
-   * must know which interface responsed first If first responsed interface is
-   * VR, then SDL should trigger closing UI popup window by sending
-   * UI_ClosePopUp request to HMI
+   * response first. In case of interaction_mode_ == InteractionMode::VR_ONLY
+   * SDL must know which interface responsed first. If first responsed interface
+   * is VR, then SDL should trigger closing UI popup window by sending
+   * UI_ClosePopUp request to HMI.
    */
   enum class FirstAnsweredInterface { NONE, UI, VR };
   /**
