@@ -54,9 +54,11 @@ class PerformInteractionRequest
     : public app_mngr::commands::CommandRequestImpl {
  public:
   /**
-   * @brief Enum, defines which PerformInteraction response came first
+   * @brief Enum, defines which interface, VR or UI, sent PerformInteraction response first
+   * In case of interaction_mode_ == InteractionMode::VR_ONLY SDL must know which interface responsed first
+   * If first responsed interface is VR, then SDL should trigger closing UI popup window by sending UI_ClosePopUp request to HMI
    */
-  enum class FirstPerformInteractionResponser { NONE, UI, VR };
+  enum class FirstAnsweredInterface { NONE, UI, VR };
   /**
    * @brief PerformInteractionRequest class constructor
    *
@@ -105,7 +107,7 @@ class PerformInteractionRequest
    * interface that returns response.
    * @return resulting code for sending to mobile application.
    */
-  virtual mobile_apis::Result::eType PrepareResultCodeForResponse(
+  mobile_apis::Result::eType PrepareResultCodeForResponse(
       const app_mngr::commands::ResponseInfo& ui_response,
       const app_mngr::commands::ResponseInfo& vr_response);
 
@@ -119,7 +121,7 @@ class PerformInteractionRequest
    * @return true if result code complies successful result code
    * otherwise returns false
    */
-  virtual bool PrepareResultForMobileResponse(
+  bool PrepareResultForMobileResponse(
       app_mngr::commands::ResponseInfo& out_first,
       app_mngr::commands::ResponseInfo& out_second) const;
 
@@ -271,10 +273,10 @@ class PerformInteractionRequest
 
   /**
    * @brief Stores first response type to PerformInteraction request that comes.
-   * @param enum FirstPerformInteractionResponser
+   * @param enum FirstAnsweredInterface
    */
-  void StoreFirstPerformInteractionResponser(
-      FirstPerformInteractionResponser responser);
+  void StoreFirstAnsweredInterface(
+      FirstAnsweredInterface responser);
 
   mobile_apis::InteractionMode::eType interaction_mode_;
   bool ui_response_received_;
@@ -286,7 +288,7 @@ class PerformInteractionRequest
   std::string ui_info_;
   std::string vr_info_;
   smart_objects::SmartObject vr_params_;
-  FirstPerformInteractionResponser first_responser_;
+  FirstAnsweredInterface first_responser_;
 
   DISALLOW_COPY_AND_ASSIGN(PerformInteractionRequest);
 };

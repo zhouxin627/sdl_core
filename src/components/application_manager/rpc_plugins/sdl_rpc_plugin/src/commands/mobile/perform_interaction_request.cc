@@ -73,7 +73,7 @@ PerformInteractionRequest::PerformInteractionRequest(
     , vr_result_code_(hmi_apis::Common_Result::INVALID_ENUM)
     , ui_result_code_(hmi_apis::Common_Result::INVALID_ENUM)
     , vr_params_(smart_objects::SmartObject(smart_objects::SmartType_Map))
-    , first_responser_(FirstPerformInteractionResponser::NONE) {
+    , first_responser_(FirstAnsweredInterface::NONE) {
   subscribe_on_event(hmi_apis::FunctionID::UI_OnResetTimeout);
   subscribe_on_event(hmi_apis::FunctionID::VR_OnCommand);
   subscribe_on_event(hmi_apis::FunctionID::Buttons_OnButtonPress);
@@ -243,8 +243,8 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
       LOG4CXX_DEBUG(logger_, "Received UI_PerformInteraction event");
       EndAwaitForInterface(HmiInterfaces::HMI_INTERFACE_UI);
       ui_response_received_ = true;
-      StoreFirstPerformInteractionResponser(
-          FirstPerformInteractionResponser::UI);
+      StoreFirstAnsweredInterface(
+          FirstAnsweredInterface::UI);
       unsubscribe_from_event(hmi_apis::FunctionID::UI_PerformInteraction);
       ui_result_code_ = static_cast<hmi_apis::Common_Result::eType>(
           message[strings::params][hmi_response::code].asUInt());
@@ -256,8 +256,8 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
       LOG4CXX_DEBUG(logger_, "Received VR_PerformInteraction");
       EndAwaitForInterface(HmiInterfaces::HMI_INTERFACE_VR);
       vr_response_received_ = true;
-      StoreFirstPerformInteractionResponser(
-          FirstPerformInteractionResponser::VR);
+      StoreFirstAnsweredInterface(
+          FirstAnsweredInterface::VR);
       unsubscribe_from_event(hmi_apis::FunctionID::VR_PerformInteraction);
       vr_result_code_ = static_cast<hmi_apis::Common_Result::eType>(
           message[strings::params][hmi_response::code].asUInt());
@@ -278,16 +278,16 @@ void PerformInteractionRequest::on_event(const event_engine::Event& event) {
 
   if (!HasHMIResponsesToWait()) {
     LOG4CXX_DEBUG(logger_, "Send response in BOTH iteraction mode");
-    const bool do_send_vr_params_only =
-        (first_responser_ == FirstPerformInteractionResponser::VR &&
+    const bool send_vr_params_only =
+        (first_responser_ == FirstAnsweredInterface::VR &&
          interaction_mode_ == mobile_apis::InteractionMode::VR_ONLY);
-    if (do_send_vr_params_only ||
+    if (send_vr_params_only ||
         IsVRPerformInteractionResponseSuccessfulInBothMode()) {
       SendBothModeResponse(vr_params_);
     } else {
       SendBothModeResponse(msg_param);
     }
-    first_responser_ = FirstPerformInteractionResponser::NONE;
+    first_responser_ = FirstAnsweredInterface::NONE;
   }
 }
 
@@ -364,14 +364,15 @@ bool PerformInteractionRequest::ProcessVRResponse(
     return false;
   }
 
-  if (first_responser_ == FirstPerformInteractionResponser::VR) {
+  if (FirstAnsweredInterface::VR == first_responser_) {
     // After VR.PerformInteraction response HMI should close UI popup window
     // if UI.PerformInteraction response comes
     // after VR.PerformInteraction response.
     // In this case SDL should send UI_ClosePopUp request.
+    const std::string kUIPerformInteractionMethodName = "UI.PerformInteraction";
     smart_objects::SmartObject hmi_request_params =
         smart_objects::SmartObject(smart_objects::SmartType_Map);
-    hmi_request_params[hmi_request::method_name] = "UI.PerformInteraction";
+    hmi_request_params[hmi_request::method_name] = kUIPerformInteractionMethodName;
     SendHMIRequest(hmi_apis::FunctionID::UI_ClosePopUp, &hmi_request_params);
   }
 
@@ -1105,8 +1106,8 @@ mobile_apis::Result::eType
 PerformInteractionRequest::PrepareResultCodeForResponse(
     const app_mngr::commands::ResponseInfo& ui_response,
     const app_mngr::commands::ResponseInfo& vr_response) {
-  if (interaction_mode_ == mobile_apis::InteractionMode::VR_ONLY) {
-    if (first_responser_ == FirstPerformInteractionResponser::VR) {
+  if (mobile_apis::InteractionMode::VR_ONLY == interaction_mode_) {
+    if (FirstAnsweredInterface::VR == first_responser_) {
       return MessageHelper::HMIToMobileResult(vr_result_code_);
     }
   }
@@ -1114,9 +1115,8 @@ PerformInteractionRequest::PrepareResultCodeForResponse(
   if (interaction_mode_ == mobile_apis::InteractionMode::BOTH) {
     if (IsVRPerformInteractionResponseSuccessfulInBothMode()) {
       return MessageHelper::HMIToMobileResult(vr_result_code_);
-    } else {
-      return MessageHelper::HMIToMobileResult(ui_result_code_);
     }
+    return MessageHelper::HMIToMobileResult(ui_result_code_);
   }
 
   return CommandRequestImpl::PrepareResultCodeForResponse(ui_response,
@@ -1126,13 +1126,13 @@ PerformInteractionRequest::PrepareResultCodeForResponse(
 bool PerformInteractionRequest::PrepareResultForMobileResponse(
     app_mngr::commands::ResponseInfo& ui_response,
     app_mngr::commands::ResponseInfo& vr_response) const {
-  if (interaction_mode_ == mobile_apis::InteractionMode::VR_ONLY) {
-    if (first_responser_ == FirstPerformInteractionResponser::VR) {
+  if (mobile_apis::InteractionMode::VR_ONLY == interaction_mode_) {
+    if (FirstAnsweredInterface::VR == first_responser_) {
       return vr_response.is_ok;
     }
   }
 
-  if (interaction_mode_ == mobile_apis::InteractionMode::BOTH) {
+  if (mobile_apis::InteractionMode::BOTH == interaction_mode_) {
     return (vr_response.is_ok || ui_response.is_ok);
   }
 
@@ -1145,15 +1145,14 @@ bool PerformInteractionRequest::
   using namespace mobile_apis;
   app_mngr::commands::ResponseInfo vr_perform_info(
       vr_result_code_, HmiInterfaces::HMI_INTERFACE_VR, application_manager_);
-  return (vr_perform_info.is_ok && interaction_mode_ == InteractionMode::BOTH);
+  return (vr_perform_info.is_ok && InteractionMode::BOTH == interaction_mode_);
 }
 
-void PerformInteractionRequest::StoreFirstPerformInteractionResponser(
-    FirstPerformInteractionResponser responser) {
-  first_responser_ =
-      (first_responser_ == FirstPerformInteractionResponser::NONE)
-          ? responser
-          : first_responser_;
+void PerformInteractionRequest::StoreFirstAnsweredInterface(
+    FirstAnsweredInterface responser) {
+  if (FirstAnsweredInterface::NONE == first_responser_) {
+    first_responser_ = responser;
+  }
 }
 
 }  // namespace commands
