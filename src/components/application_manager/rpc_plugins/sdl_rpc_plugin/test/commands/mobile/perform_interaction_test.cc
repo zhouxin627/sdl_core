@@ -283,30 +283,41 @@ TEST_F(
 
   ASSERT_TRUE(command->Init());
 
+  MockAppPtr mock_app;
+  EXPECT_CALL(app_mngr_, application(_)).WillRepeatedly(Return(mock_app));
+
   MessageSharedPtr response_msg_vr =
       CreateMessage(smart_objects::SmartType_Map);
   (*response_msg_vr)[strings::params][hmi_response::code] =
-      hmi_apis::Common_Result::SUCCESS;
+      hmi_apis::Common_Result::UNSUPPORTED_RESOURCE;
+  (*response_msg_vr)[strings::msg_params][strings::cmd_id] = kCommandId;
+  (*response_msg_vr)[am::strings::msg_params][am::strings::info] =
+      "VR is not supported by system";
+
   am::event_engine::Event event_vr(hmi_apis::FunctionID::VR_PerformInteraction);
   event_vr.set_smart_object(*response_msg_vr);
 
-  am::commands::ResponseInfo ui_perform_info;
-  ui_perform_info.result_code = hmi_apis::Common_Result::UNSUPPORTED_RESOURCE;
-  ui_perform_info.is_ok = false;
-  am::commands::ResponseInfo vr_perform_info;
-  vr_perform_info.result_code = hmi_apis::Common_Result::SUCCESS;
-  vr_perform_info.is_ok = true;
+  MessageSharedPtr response_msg_ui =
+      CreateMessage(smart_objects::SmartType_Map);
+  (*response_msg_ui)[strings::params][hmi_response::code] =
+      hmi_apis::Common_Result::SUCCESS;
+
+  am::event_engine::Event event_ui(hmi_apis::FunctionID::UI_PerformInteraction);
+  event_ui.set_smart_object(*response_msg_ui);
+
+  MessageSharedPtr response_to_mobile;
+  EXPECT_CALL(
+      mock_rpc_service_,
+      ManageMobileCommand(_, am::commands::Command::CommandSource::SOURCE_SDL))
+      .WillOnce(DoAll(SaveArg<0>(&response_to_mobile), Return(true)));
 
   command->on_event(event_vr);
-  auto result_code =
-      command->PrepareResultCodeForResponse(ui_perform_info, vr_perform_info);
-  EXPECT_EQ(result_code, mobile_apis::Result::SUCCESS);
-  EXPECT_NE(result_code, mobile_apis::Result::UNSUPPORTED_RESOURCE);
+  command->on_event(event_ui);
 
-  auto result_success =
-      command->PrepareResultForMobileResponse(ui_perform_info, vr_perform_info);
-  EXPECT_EQ(result_success, vr_perform_info.is_ok);
-  EXPECT_NE(result_success, ui_perform_info.is_ok);
+  ResultCommandExpectations(response_to_mobile,
+                            false,
+                            hmi_apis::Common_Result::UNSUPPORTED_RESOURCE,
+                            "VR is not supported by system");
 }
 
 TEST_F(
