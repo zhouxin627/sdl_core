@@ -1611,7 +1611,7 @@ void PolicyManagerImpl::ResetTimeout() {
     if (timer_retry_sequence_.is_running()) {
       timer_retry_sequence_.Stop();
     }
-    timer_retry_sequence_.Start(cache_->TimeoutResponse(), timer::kPeriodic);
+    timer_retry_sequence_.Start(cache_->TimeoutResponse(), timer::kSingleShot);
   }
 }
 
