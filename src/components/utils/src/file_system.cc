@@ -326,7 +326,6 @@ bool file_system::ReadBinaryFile(const std::string& name,
 
   std::ifstream file(name.c_str(), std::ios_base::binary);
   file.ignore(offset);
-  std::ostringstream ss;
   std::string s;
   s.resize(length);
   file.read(&s[0], length);
