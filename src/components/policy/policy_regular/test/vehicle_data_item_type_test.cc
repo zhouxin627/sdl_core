@@ -142,6 +142,7 @@ class VehicleDataItemTypeTest : public ::testing::Test {
   Json::Reader reader_;
 };
 
+// cppcheck-suppress syntaxError
 TEST_F(VehicleDataItemTypeTest, Initialize_Success) {
   reader_.parse(GetFullJsonString(), json_);
   VehicleDataItem vdi(&json_);

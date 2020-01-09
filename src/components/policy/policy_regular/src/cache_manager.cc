@@ -78,6 +78,7 @@ CREATE_LOGGERPTR_GLOBAL(logger_, "Policy")
   }
 
 struct LanguageFinder {
+  // cppcheck-suppress noExplicitConstructor
   LanguageFinder(const std::string& language) : language_(language) {}
   bool operator()(const policy_table::Languages::value_type& lang) const {
     return !strcasecmp(language_.c_str(), lang.first.c_str());
@@ -88,10 +89,12 @@ struct LanguageFinder {
 };
 
 struct PolicyTableUpdater {
+  // cppcheck-suppress noExplicitConstructor
   PolicyTableUpdater(const policy_table::ApplicationParams& default_params)
       : default_params_(default_params) {}
 
-  void operator()(policy_table::ApplicationPolicies::value_type& pt_value) {
+  void operator()(
+      policy_table::ApplicationPolicies::value_type& pt_value) const {
     if (policy::kDefaultId == pt_value.second.get_string()) {
       pt_value.second = default_params_;
       pt_value.second.set_to_string(policy::kDefaultId);
@@ -1300,8 +1303,6 @@ void CacheManager::PersistData() {
           copy_pt.policy_table.app_policies_section.apps.end();
 
       bool is_revoked = false;
-      bool is_default_policy;
-      bool is_predata_policy;
 
       for (; app_policy_iter != app_policy_iter_end; ++app_policy_iter) {
         const std::string app_id = (*app_policy_iter).first;
@@ -1311,7 +1312,7 @@ void CacheManager::PersistData() {
           is_revoked =
               copy_pt.policy_table.app_policies_section.apps[app_id].is_null();
         }
-
+        bool is_default_policy;
         is_default_policy =
             copy_pt.policy_table.app_policies_section.apps.end() !=
                 copy_pt.policy_table.app_policies_section.apps.find(app_id) &&
@@ -1320,6 +1321,7 @@ void CacheManager::PersistData() {
                     .get_string();
 
         // TODO(AOleynik): Remove this field from DB
+        bool is_predata_policy;
         is_predata_policy =
             copy_pt.policy_table.app_policies_section.apps.end() !=
                 copy_pt.policy_table.app_policies_section.apps.find(app_id) &&
