@@ -92,6 +92,7 @@ class HMIMessageHandlerImplTest : public ::testing::Test {
   }
 };
 
+// cppcheck-suppress syntaxError
 TEST_F(HMIMessageHandlerImplTest,
        OnErrorSending_EmptyMessage_OnErrorSendingProceeded) {
   // Arrange
