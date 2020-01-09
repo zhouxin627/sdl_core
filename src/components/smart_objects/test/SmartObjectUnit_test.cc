@@ -94,6 +94,7 @@ class TestHelper : public ::testing::Test {
 /*
  * Tests different types sequentially
  */
+// cppcheck-suppress syntaxError
 TEST(BasicMixtedTypes, test_SmartObjectUnitTest) {
   SmartObject obj;
 

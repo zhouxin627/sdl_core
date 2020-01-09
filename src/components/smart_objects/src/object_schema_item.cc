@@ -142,6 +142,7 @@ errors::eType CObjectSchemaItem::validate(
 
     errors::eType result = errors::OK;
     // Check if MessageVersion matches schema version
+    // cppcheck-suppress redundantAssignment
     result =
         correct_member.mSchemaItem->validate(field,
                                              &report__->ReportSubobject(key),
