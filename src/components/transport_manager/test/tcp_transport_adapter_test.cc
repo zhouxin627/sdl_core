@@ -69,6 +69,7 @@ class TcpAdapterTest : public ::testing::Test {
   }
 };
 
+// cppcheck-suppress syntaxError
 TEST_F(TcpAdapterTest, StoreDataWithOneDeviceAndOneApplication) {
   // Prepare
   MockTCPTransportAdapter transport_adapter(

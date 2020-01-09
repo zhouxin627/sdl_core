@@ -75,6 +75,7 @@ std::vector<uint8_t> kBTUUID = {0x93,
                                 0xA8};
 }  // namespace
 
+// cppcheck-suppress syntaxError
 TEST(TestTransportManagerDefault, Init_LastStateNotUsed) {
   MockTransportManagerSettings transport_manager_settings;
   transport_manager::TransportManagerDefault transport_manager(
