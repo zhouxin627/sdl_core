@@ -308,6 +308,7 @@ class WaitAsync {
 };
 }  // namespace
 
+// cppcheck-suppress syntaxError
 TEST_F(PolicyHandlerTest, LoadPolicyLibrary_Method_ExpectLibraryLoaded) {
   // Check before policy enabled from ini file
   EXPECT_CALL(policy_settings_, enable_policy()).WillRepeatedly(Return(false));

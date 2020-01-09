@@ -398,6 +398,7 @@ void PerformInteractionRequest::ProcessUIResponse(
       application_manager_.hmi_interfaces().GetInterfaceState(
           HmiInterfaces::HMI_INTERFACE_UI);
   bool result = false;
+  // cppcheck-suppress redundantAssignment
   result = Compare<hmi_apis::Common_Result::eType, EQ, ONE>(
       ui_result_code_,
       hmi_apis::Common_Result::SUCCESS,
@@ -847,6 +848,7 @@ bool PerformInteractionRequest::IsWhiteSpaceExist() {
   LOG4CXX_AUTO_TRACE(logger_);
   const char* str = NULL;
 
+  // cppcheck-suppress redundantAssignment
   str = (*message_)[strings::msg_params][strings::initial_text].asCharArray();
   if (!CheckSyntax(str)) {
     LOG4CXX_ERROR(logger_, "Invalid initial_text syntax check failed");
@@ -1009,8 +1011,10 @@ bool PerformInteractionRequest::CheckChoiceIDFromRequest(
     const smart_objects::SmartObject& choice_set_id_list) const {
   LOG4CXX_AUTO_TRACE(logger_);
 
+  // cppcheck-suppress variableScope
   size_t choice_list_length = 0;
   std::set<uint32_t> choice_id_set;
+  // cppcheck-suppress variableScope
   smart_objects::SmartObject* choice_set = 0;
   std::pair<std::set<uint32_t>::iterator, bool> ins_res;
 
@@ -1057,6 +1061,7 @@ void PerformInteractionRequest::SendBothModeResponse(
       vr_result_code_, HmiInterfaces::HMI_INTERFACE_VR, application_manager_);
   const bool result =
       PrepareResultForMobileResponse(ui_perform_info, vr_perform_info);
+  // cppcheck-suppress redundantAssignment
   perform_interaction_result_code =
       PrepareResultCodeForResponse(ui_perform_info, vr_perform_info);
   const smart_objects::SmartObject* response_params =

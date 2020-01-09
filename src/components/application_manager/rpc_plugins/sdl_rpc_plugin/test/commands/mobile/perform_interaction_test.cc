@@ -101,6 +101,7 @@ class PerformInteractionRequestTest
   MockAppPtr mock_app_;
 };
 
+// cppcheck-suppress syntaxError
 TEST_F(PerformInteractionRequestTest, OnTimeout_VR_GENERIC_ERROR) {
   MessageSharedPtr response_msg_vr =
       CreateMessage(smart_objects::SmartType_Map);

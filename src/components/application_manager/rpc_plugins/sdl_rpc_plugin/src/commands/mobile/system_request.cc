@@ -318,6 +318,7 @@ class QueryAppsDataValidator {
     return true;
   }
 
+  // cppcheck-suppress functionStatic
   bool ValidateSynonymsAtLanguage(const smart_objects::SmartObject& language,
                                   const std::string& language_name,
                                   SynonymsMap& synonyms_map) const {
@@ -389,6 +390,7 @@ class QueryAppsDataValidator {
     return true;
   }
 
+  // cppcheck-suppress functionStatic
   bool CheckMandatoryParametersPresent(
       const smart_objects::SmartObject& app_data) const {
     if (!app_data.keyExists(json::android) && !app_data.keyExists(json::ios)) {
