@@ -278,7 +278,7 @@ class PerformInteractionRequest
    * @brief Stores first response type to PerformInteraction request that comes.
    * @param enum FirstAnsweredInterface
    */
-  void StoreFirstAnsweredInterface(FirstAnsweredInterface responser);
+  void StoreFirstAnsweredInterface(FirstAnsweredInterface responder);
 
   mobile_apis::InteractionMode::eType interaction_mode_;
   bool ui_response_received_;
@@ -290,7 +290,7 @@ class PerformInteractionRequest
   std::string ui_info_;
   std::string vr_info_;
   smart_objects::SmartObject vr_params_;
-  FirstAnsweredInterface first_responser_;
+  FirstAnsweredInterface first_responder_;
 
   DISALLOW_COPY_AND_ASSIGN(PerformInteractionRequest);
 };
