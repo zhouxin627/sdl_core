@@ -1902,7 +1902,6 @@ void ApplicationManagerImpl::OnStreamingConfigured(
       for (size_t i = 0; i < navi_app_to_stop_.size(); ++i) {
         if (app_id == navi_app_to_stop_[i]) {
           sync_primitives::AutoLock lock(close_app_timer_pool_lock_);
-          close_app_timer_pool_[i]->Stop();
           close_app_timer_pool_.erase(close_app_timer_pool_.begin() + i);
           navi_app_to_stop_.erase(navi_app_to_stop_.begin() + i);
           break;
